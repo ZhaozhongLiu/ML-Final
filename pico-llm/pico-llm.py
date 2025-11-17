@@ -99,9 +99,9 @@ def parse_args():
                         help="Dropout applied inside the transformer.")
     parser.add_argument("--transformer_max_seq_len", type=int, default=1024,
                         help="Maximum context length for the transformer.")
-    parser.add_argument("--positional_embedding", type=str, default="learned",
-                        choices=["learned", "sinusoidal", "rope"],
-                        help="Type of positional embedding to use for the transformer.")
+    parser.add_argument("--positional_embedding", type=lambda s: s.lower(), default="learned",
+                        choices=["learned", "sinusoidal", "rope", "none", "nope"],
+                        help="Type of positional embedding (learned, sinusoidal, RoPE, or NoPE).")
     parser.add_argument("--rope_base", type=float, default=10000.0,
                         help="Base frequency for RoPE positional embedding (if selected).")
 
@@ -538,6 +538,8 @@ class TransformerModel(nn.Module):
             self.register_buffer("sinusoidal_pe", pe, persistent=False)
             self.pos_embedding = None
         elif pos_type == "rope":
+            self.pos_embedding = None
+        elif pos_type in {"none", "nope"}:
             self.pos_embedding = None
         else:
             raise ValueError(f"Unknown positional_embedding type: {positional_embedding}")
