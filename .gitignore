@@ -39,3 +39,6 @@ optional_tasks_summary.txt
 
 # Local reference copy kept outside the repo history
 pico-llm\ \(original\)/
+
+#pdfs
+*.pdf
