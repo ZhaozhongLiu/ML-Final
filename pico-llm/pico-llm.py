@@ -21,6 +21,7 @@ import tiktoken
 # 1. Command-line arg parsing
 ################################################################################
 
+# Central place to collect experiment knobs / 集中解析实验所有参数
 def parse_args():
     parser = argparse.ArgumentParser(description="Train multiple k-gram or sequence-based models on TinyStories and/or custom text files.")
     parser.add_argument("--input_files", nargs="*", default=None,
@@ -114,15 +115,8 @@ def parse_args():
 ################################################################################
 
 class MixedSequenceDataset(torch.utils.data.Dataset):
-    """
-    We store two lists of entire token sequences:
-      - tinystories_seqs
-      - other_seqs
-    Each sequence is length <= block_size.
-
-    During __getitem__, we randomly pick from one list or the other with probability p_tiny.
-    Return that entire sequence as a 1D LongTensor.
-    """
+    """Simple sampler that mixes TinyStories and custom text."""
+    # Keep TinyStories & custom pools and sample by probability / 保存两类语料并按概率采样
     def __init__(self, tinystories_seqs, other_seqs, p_tiny: float):
         super().__init__()
         self.tinystories_seqs = tinystories_seqs
@@ -140,6 +134,7 @@ class MixedSequenceDataset(torch.utils.data.Dataset):
         return self.total_length
 
     def __getitem__(self, idx):
+        # Probabilistically pick data source / 先掷硬币决定来自哪种语料
         r = random.random()
         if self.has_tinystories and self.has_other:
             if r < self.p_tiny:
@@ -165,6 +160,7 @@ def seq_collate_fn(batch):
     2) pad with zeros
     3) shape => (max_len, batch_size)
     """
+    # Pad ragged sequences so downstream models share shape / 用0填充不同长度的序列以方便并行处理
     max_len = max(len(seq) for seq in batch)
     batch_size = len(batch)
 
@@ -186,6 +182,7 @@ def split_sequence_pool(seq_list, val_ratio, rng):
     Splits a list of sequences into train/validation portions.
     Ensures we keep at least one element for training when possible.
     """
+    # Randomly split sequences; light safeguard to avoid empty train / 随机切分并保证训练集不至为零
     seq_list = list(seq_list)
     if val_ratio <= 0.0 or len(seq_list) <= 1:
         return seq_list, []
@@ -206,6 +203,7 @@ def create_sequence_loader(tiny, other, p_tiny, batch_size, shuffle):
     """
     Helper to only build a loader when data is available.
     """
+    # Skip loader construction when both pools empty / 当两类语料都空时直接返回None
     if len(tiny) == 0 and len(other) == 0:
         return None
 
@@ -229,6 +227,7 @@ def compute_next_token_loss(logits, tokens):
     tokens: (seq_len, batch)
     Next-token prediction => we shift target by 1.
     """
+    # Align model outputs with future tokens / 通过平移一个时间步来对齐预测与真值
     seq_len, batch_size, vocab_size = logits.shape
     if seq_len < 2:
         return torch.tensor(0.0, device=logits.device, requires_grad=True)
@@ -245,6 +244,7 @@ def save_model_checkpoint(model, checkpoint_path, metadata):
     """
     Persist a trained model's weights together with minimal config metadata.
     """
+    # Create directory + torch.save payload / 先建目录再保存配置与权重
     directory = os.path.dirname(checkpoint_path)
     if directory:
         os.makedirs(directory, exist_ok=True)
@@ -284,6 +284,7 @@ class KGramMLPSeqModel(nn.Module):
             layers.append(nn.SiLU())
 
         layers.append(nn.Linear(hidden_dim, self.vocab_size))
+        # Simple feedforward pipeline / 多层感知机将拼接的one-hot上下文映射到词表logits
         self.net = nn.Sequential(*layers)
 
     def forward(self, tokens_seq):
@@ -292,6 +293,7 @@ class KGramMLPSeqModel(nn.Module):
         return: (seq_len, batch, vocab_size)
         We'll do a loop over time steps. chunk_size can reduce overhead.
         """
+        # Explicit python loops save memory, though slower / 通过显式循环换取更低显存需求
         seq_len, batch_size = tokens_seq.shape
         outputs = []
 
@@ -329,6 +331,7 @@ class KGramMLPSeqModel(nn.Module):
 # 4. LSTM-based seq2seq
 ################################################################################
 
+# Standard token embedding + LSTM decoder / 标准嵌入+LSTM结构
 class LSTMSeqModel(nn.Module):
     def __init__(self, vocab_size, embed_size=1024, hidden_size=1024):
         super().__init__()
@@ -345,6 +348,7 @@ class LSTMSeqModel(nn.Module):
         tokens_seq: (seq_len, batch)
         => (seq_len, batch, vocab_size)
         """
+        # Run embedding->LSTM->linear pipeline / 依次通过嵌入、LSTM与线性层
         emb = self.embedding(tokens_seq)   # (seq_len, batch, embed)
         self.lstm.flatten_parameters()
         out, _ = self.lstm(emb)           # (seq_len, batch, hidden)
@@ -356,7 +360,8 @@ class LSTMSeqModel(nn.Module):
 # 5. Our "stub" Transformer with KV-cache 
 #    Very slow Python loop for training. Multi-head sums head outputs.
 ################################################################################
-
+    
+# Lightweight RMS normalization / 均方根归一化层
 class RMSNorm(nn.Module):
     def __init__(self, dim, eps=1e-5):
         super().__init__()
@@ -368,6 +373,7 @@ class RMSNorm(nn.Module):
         x_norm = x * torch.rsqrt(rms + self.eps)
         return self.weight * x_norm
 
+# Implements RoPE helper / RoPE位置编码辅助类
 class RotaryEmbedding(nn.Module):
     def __init__(self, dim: int, base: float = 10000.0):
         super().__init__()
@@ -392,6 +398,7 @@ class RotaryEmbedding(nn.Module):
         return (x * cos) + (rotated * sin)
 
 
+# Basic causal self-attention block / 基本的多头自注意力模块
 class MultiHeadSelfAttention(nn.Module):
     def __init__(
         self,
@@ -422,6 +429,7 @@ class MultiHeadSelfAttention(nn.Module):
         attn_mask: torch.Tensor,
         rope_cache: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> torch.Tensor:
+        # Project to QKV -> apply mask/softmax -> mix heads / 投影得到QKV后加mask做加权求和
         seq_len, batch_size, _ = x.shape
 
         qkv = self.qkv(x.transpose(0, 1))  # (batch, seq, 3*d_model)
@@ -451,6 +459,7 @@ class MultiHeadSelfAttention(nn.Module):
         return output
 
 
+# Transformer MLP sub-layer / Transformer中的前馈网络
 class FeedForward(nn.Module):
     def __init__(self, dim: int, hidden_dim: int, dropout: float = 0.0):
         super().__init__()
@@ -465,6 +474,7 @@ class FeedForward(nn.Module):
         return self.net(x)
 
 
+# Single transformer layer = attention + FFN / 单层Transformer由注意力+前馈组成
 class TransformerBlock(nn.Module):
     def __init__(
         self,
@@ -495,11 +505,13 @@ class TransformerBlock(nn.Module):
         attn_mask: torch.Tensor,
         rope_cache: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> torch.Tensor:
+
         attn_input = self.attn_norm(x)
         x = x + self.attn(attn_input, attn_mask, rope_cache)
         ff_input = self.ff_norm(x)
         x = x + self.ff(ff_input)
         return x
+
 
 
 class TransformerModel(nn.Module):
@@ -527,6 +539,7 @@ class TransformerModel(nn.Module):
         self.token_embedding = nn.Embedding(vocab_size, d_model)
 
         pos_type = positional_embedding.lower()
+        # Allow multiple positional encoding options / 支持多种位置编码配置
         if pos_type == "learned":
             self.pos_embedding = nn.Embedding(max_seq_len, d_model)
         elif pos_type == "sinusoidal":
@@ -565,6 +578,7 @@ class TransformerModel(nn.Module):
 
         causal_mask = torch.full((max_seq_len, max_seq_len), float("-inf"))
         causal_mask = torch.triu(causal_mask, diagonal=1)
+        # Store upper-triangular mask to block future positions / 构建上三角mask禁止看未来token
         self.register_buffer("causal_mask", causal_mask, persistent=False)
 
     def forward(self, tokens_seq: torch.Tensor) -> torch.Tensor:
@@ -583,7 +597,7 @@ class TransformerModel(nn.Module):
         elif pos_type == "sinusoidal":
             pos_emb = self.sinusoidal_pe[:seq_len, :].to(device=tokens_seq.device, dtype=tok_emb.dtype).unsqueeze(1)
             x = tok_emb + pos_emb
-        else:  # rope or none
+        else:  # rope or none / RoPE或无显式位置编码
             x = tok_emb
 
         x = self.dropout(x)
@@ -594,9 +608,11 @@ class TransformerModel(nn.Module):
 
         rope_cache = None
         if self.use_rope and len(self.blocks) > 0:
+            # Precompute cos/sin tables once per forward / 每次前向只计算一次RoPE旋转表
             rope_cache = self.blocks[0].attn.rotary_emb(seq_len, tokens_seq.device, tok_emb.dtype)
 
         for block in self.blocks:
+            # Sequentially apply transformer blocks / 逐层应用Transformer块
             x = block(x, attn_mask, rope_cache)
 
         x = self.final_norm(x)
@@ -610,6 +626,7 @@ class TransformerModel(nn.Module):
 
 
 def monosemantic_analysis_for_token(token_id, model, enc, device="cpu", top_n=5):
+    # Placeholder: hook for interpretability work / 占位函数，可接入可解释性分析
     return []
 
 
@@ -618,6 +635,7 @@ def monosemantic_analysis_for_token(token_id, model, enc, device="cpu", top_n=5)
 ################################################################################
 
 def nucleus_sampling(logits, p=0.95):
+    # Sample token from nucleus set / 使用top-p（核采样）从概率尾部截断后的集合中采样
     if p is None or p <= 0.0:
         return torch.argmax(logits).item()
 
@@ -660,6 +678,7 @@ def generate_text(model, enc, init_text, max_new_tokens=20, device="cpu",
     model.eval()
     with torch.no_grad():
         context_tokens = enc.encode(init_text)
+        # Keep growing context for autoregressive sampling / 自回归采样不停扩大上下文
         annotation_list = []
 
         for step_i in range(max_new_tokens):
@@ -705,6 +724,7 @@ def compute_text_diversity(text, enc):
     """
     Compute simple diversity statistics for a generated text sample.
     """
+    # Quick heuristic stats (unique tokens etc.) / 粗略统计重复率、独特词数
     if enc is None or not text:
         return {
             "num_tokens": 0,
@@ -748,6 +768,7 @@ def train_one_model(model,
     """
     We add `prompt` as an explicit argument so we can pass it down from main().
     """
+    # Shared training controller / 通用训练主循环
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     start_time = time.time()
@@ -756,6 +777,7 @@ def train_one_model(model,
     overfit_history = [] if overfit_options is not None else None
 
     for epoch in range(1, epochs + 1):
+        # One full pass over loader / 开始新一轮epoch
         model.train()
         total_loss = 0.0
         partial_loss = 0.0
@@ -763,6 +785,7 @@ def train_one_model(model,
 
         step_in_epoch = 0
         for batch_idx, batch_tokens in enumerate(loader, start=1):
+            # Move batch to device & run forward/backward / 将批次送入设备并完成一次更新
             step_in_epoch += 1
             global_step += 1
 
@@ -790,6 +813,7 @@ def train_one_model(model,
             current_time = time.time()
             if current_time >= next_sample_time and enc is not None:
                 with torch.no_grad():
+                    # Periodically sample text for qualitative check / 定期生成文本方便观察模型学习情况
                     print(f"\n[{model_name}] Generating sample text (greedy) at epoch={epoch}, step={batch_idx}...")
                     text_greedy, ann_greedy = generate_text(
                         model, enc, prompt, max_new_tokens=20, device=device,
@@ -845,6 +869,7 @@ def train_one_model(model,
         print(msg)
 
         if overfit_history is not None and enc is not None:
+            # Capture short generations for overfitting study / 记录样本以分析过拟合
             sample_prompt = overfit_options.get("prompt", prompt)
             sample_tokens = overfit_options.get("sample_tokens", 20)
             sampler_top_ps = overfit_options.get("top_ps", [None])
@@ -895,6 +920,7 @@ def evaluate_model(model, loader, device):
 
     was_training = model.training
     model.eval()
+    # No grad + running loss average / 关闭梯度，简单算平均损失
     total_loss = 0.0
     count = 0
     with torch.no_grad():
@@ -915,6 +941,7 @@ def evaluate_model(model, loader, device):
 
 def main():
     args = parse_args()
+    # CLI -> python dict of settings / 将命令行参数整理成本地配置
 
     # Additional local variables from arguments
     k = args.kgram_k
@@ -940,6 +967,7 @@ def main():
     torch.manual_seed(args.data_seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.data_seed)
+    # Deterministic-ish splits / 固定随机种子以复现实验
     rng = random.Random(args.data_seed)
     requested_models = [m.lower() for m in args.models] if args.models else ["lstm_seq"]
     checkpoint_dir = args.checkpoint_dir
@@ -954,6 +982,7 @@ def main():
     else:
         device = torch.device(requested_device_id)
 
+    # Report important hyperparameters / 打印主要训练配置方便检查
     print(f"Using device: {device}, block_size={block_size}, kgram_k={k}, chunk_size={chunk_size}, embed_size={embed_size}")
     print(f"Training hyperparameters: batch_size={batch_size}, epochs={num_epochs}, lr={learning_rate}, "
           f"val_split={val_split}, test_split={test_split}")
@@ -980,6 +1009,7 @@ def main():
     print(f"Vocab size: {vocab_size}")
 
     if dataset is not None:
+        # Convert HF samples to token id lists / 将TinyStories文本编码成token序列
         for sample in dataset:
             text = sample['text']
             tokens = enc.encode(text)
@@ -1026,6 +1056,7 @@ def main():
     if test_split > 0.0:
         print(f"Test split: TinyStories={len(tiny_test)}, Custom={len(other_test)}")
 
+    # Build DataLoaders for each phase / 为训练、验证、测试建立迭代器
     train_loader = create_sequence_loader(
         tiny=tiny_train,
         other=other_train,
@@ -1060,6 +1091,7 @@ def main():
     overfit_options = None
     overfit_reports = {}
     if overfit_logging_enabled:
+        # Normalize sampler top-p list / 规范化overfit日志采样参数
         sampler_values = args.overfit_sampler_top_ps or [0.0]
         sanitized_top_ps = []
         for tp in sampler_values:
@@ -1097,6 +1129,7 @@ def main():
                 "num_inner_layers": num_inner_layers,
                 "chunk_size": chunk_size,
             }
+            # Instantiate sliding-window MLP / 构建k-gram MLP模型
             models[name] = KGramMLPSeqModel(
                 vocab_size=vocab_size,
                 k=k,
@@ -1112,6 +1145,7 @@ def main():
                 "embed_size": embed_size,
                 "hidden_size": embed_size,
             }
+            # Instantiate stacked LSTM / 构建LSTM序列模型
             models[name] = LSTMSeqModel(
                 vocab_size=vocab_size,
                 embed_size=embed_size,
@@ -1134,6 +1168,7 @@ def main():
                 "positional_embedding": args.positional_embedding,
                 "rope_base": args.rope_base,
             }
+            # Instantiate toy Transformer / 构建自定义Transformer模型
             models[canonical_name] = TransformerModel(
                 vocab_size=vocab_size,
                 d_model=args.transformer_d_model,
@@ -1156,6 +1191,7 @@ def main():
     ############################################################################
     # Train each model
     ############################################################################
+    # Train/eval each requested model sequentially / 依次训练并评估每一种模型
     for model_name, model in models.items():
         print(f"\n=== Training model: {model_name} ===")
         history = train_one_model(
@@ -1199,6 +1235,7 @@ def main():
                 top_p=1.0,
             )
 
+        # Print multilingual-friendly summary of outputs / 打印不同采样策略生成的最终文本
         print(f"[{model_name}] Final sample (greedy) from prompt: '{args.prompt}'")
         print(text_greedy)
         print(f"Annotated:\n{ann_greedy}\n")
@@ -1211,12 +1248,14 @@ def main():
         print(text_topp1)
         print(f"Annotated:\n{ann_topp1}")
 
+        # Persist weights for later reuse / 保存模型权重供复现
         checkpoint_path = os.path.join(checkpoint_dir, f"{model_name}_final.pt")
         checkpoint_meta = model_configs.get(model_name, {"model_type": model_name})
         save_model_checkpoint(model, checkpoint_path, checkpoint_meta)
         print("--------------------------------------------------")
 
     if overfit_logging_enabled and args.overfit_report_path:
+        # Serialize report for later inspection / 将过拟合分析写成JSON
         report_payload = {
             "generated_at": time.time(),
             "data_splits": split_summary,
