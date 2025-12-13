@@ -6,9 +6,14 @@ python analysis/attention_viz.py --checkpoint results/baseline/run-*/baseline_ch
 """
 
 import argparse
+import os
 from pathlib import Path
 from typing import List, Tuple
 
+import matplotlib
+
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/mplconfig")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
 

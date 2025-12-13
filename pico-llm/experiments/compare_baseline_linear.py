@@ -8,13 +8,19 @@ python experiments/compare_baseline_linear.py --baseline_ckpt path/to/baseline.p
 
 import argparse
 import json
+import os
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 
+import matplotlib
+
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/mplconfig")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+from data.file_sequences import build_file_dataloaders, compute_stats, load_numeric_sequences, remap_to_contiguous_ids
 from analysis.activations import build_batches, masked_mean, plot_heatmap
 from analysis.attention_viz import plot_attention
 from analysis.embedding_viz import compute_pca, plot_embeddings
@@ -46,6 +52,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--val_per_type", type=int, default=60)
     parser.add_argument("--test_per_type", type=int, default=60)
     parser.add_argument("--seq_types", type=str, default="counting,arithmetic,geometric,alternating,random_walk")
+    parser.add_argument("--data_file", type=str, default=None, help="Optional path to numeric sequence file (space-separated integers per line).")
+    parser.add_argument("--file_val_ratio", type=float, default=0.1, help="Validation split ratio when using --data_file.")
+    parser.add_argument("--file_test_ratio", type=float, default=0.1, help="Test split ratio when using --data_file.")
+    parser.add_argument("--file_seq_cap", type=int, default=0, help="Optional truncate length for file sequences (0 = no cap).")
+    parser.add_argument("--attn_seq_len", type=int, default=48, help="Max sequence length to visualize for attention when using file data.")
+    parser.add_argument("--activation_seq_len", type=int, default=96, help="Sequence length cap when computing activation selectivity for file data.")
     parser.add_argument("--baseline_ckpt", type=str, default=None)
     parser.add_argument("--linear_ckpt", type=str, default=None)
     parser.add_argument("--skip_train", action="store_true", help="Only load checkpoints; do not train.")
@@ -71,6 +83,45 @@ def make_model_cfg(args, data_cfg: TrainingConfig) -> TransformerConfig:
     )
 
 
+def prepare_file_dataset(args) -> Tuple[TrainingConfig, Tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader, torch.utils.data.DataLoader], Dict]:
+    """Load 3seqs-style numeric data and build dataloaders + config."""
+    file_path = Path(args.data_file)
+    raw_sequences = load_numeric_sequences(file_path)
+    remapped_sequences, id_map, sorted_vocab = remap_to_contiguous_ids(raw_sequences)
+
+    if args.file_seq_cap and args.file_seq_cap > 0:
+        raw_sequences = [seq[: args.file_seq_cap] for seq in raw_sequences]
+        remapped_sequences = [seq[: args.file_seq_cap] for seq in remapped_sequences]
+
+    vocab_size = len(sorted_vocab) + 1  # +1 for pad
+    pad_token_id = vocab_size - 1
+    stats = compute_stats(remapped_sequences, vocab_size, pad_token_id, max_token=sorted_vocab[-1])
+
+    loaders = build_file_dataloaders(
+        remapped_sequences,
+        pad_token_id=pad_token_id,
+        batch_size=args.batch_size,
+        val_ratio=args.file_val_ratio,
+        test_ratio=args.file_test_ratio,
+        seed=42,
+    )
+
+    data_cfg = TrainingConfig(
+        vocab_size=vocab_size,
+        batch_size=args.batch_size,
+        epochs=args.epochs,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        seq_min_len=stats.min_len,
+        seq_max_len=stats.max_len,
+        train_per_type=0,
+        val_per_type=0,
+        test_per_type=0,
+        seed=42,
+    )
+    return data_cfg, loaders, {"raw_sequences": raw_sequences, "remapped_sequences": remapped_sequences, "id_map": id_map, "stats": stats, "sorted_vocab": sorted_vocab}
+
+
 def maybe_train_model(
     model_type: str,
     args,
@@ -78,7 +129,8 @@ def maybe_train_model(
     seq_types: Tuple[str, ...],
     out_root: Path,
     ckpt_override: str,
-):
+    loaders: Optional[Tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader, torch.utils.data.DataLoader]] = None,
+) -> Tuple[torch.nn.Module, TransformerConfig, Dict, Dict, Path]:
     device = torch.device(args.device)
     if ckpt_override:
         model, cfg, _ = load_checkpoint(Path(ckpt_override), device)
@@ -93,7 +145,10 @@ def maybe_train_model(
     else:
         model = init_linear_model(model_cfg).to(device)
 
-    train_loader, val_loader, test_loader = build_dataloaders(data_cfg, seq_types)
+    if loaders is None:
+        train_loader, val_loader, test_loader = build_dataloaders(data_cfg, seq_types)
+    else:
+        train_loader, val_loader, test_loader = loaders
     run_dir = out_root / model_type
     history = train_model(model, model_cfg, model_type, train_loader, val_loader, run_dir)
     test_loss, test_acc = evaluate(model, test_loader, model_cfg)
@@ -124,28 +179,62 @@ def run_embedding_viz(model, cfg, model_type: str, out_path: Path):
     plot_embeddings(proj, tokens, cfg.pad_token_id, out_path, f"{model_type} embeddings")
 
 
-def run_attention_viz(model, cfg, model_type: str, seq_type: str, length: int, out_dir: Path):
-    gen_cfg = SequenceGenerationConfig(
-        vocab_size=cfg.vocab_size,
-        min_length=length,
-        max_length=length,
-        seq_types=(seq_type,),
-        seed=7,
-    )
+def run_attention_viz(
+    model,
+    cfg,
+    model_type: str,
+    seq_type: str,
+    length: int,
+    out_dir: Path,
+    tokens: Optional[List[int]] = None,
+    display_tokens: Optional[List[int]] = None,
+):
     import random
 
-    seq = generate_single_sequence(seq_type, gen_cfg, random.Random(7))
-    tokens = torch.tensor(seq, dtype=torch.long).unsqueeze(0).to(cfg.device)
+    if tokens is None:
+        gen_cfg = SequenceGenerationConfig(
+            vocab_size=cfg.vocab_size,
+            min_length=length,
+            max_length=length,
+            seq_types=(seq_type,),
+            seed=7,
+        )
+        seq = generate_single_sequence(seq_type, gen_cfg, random.Random(7))
+        tokens = seq
+        display_tokens = seq
+    else:
+        display_tokens = display_tokens or tokens
+
+    token_tensor = torch.tensor(tokens, dtype=torch.long).unsqueeze(0).to(cfg.device)
     with torch.no_grad():
-        logits, attn_maps, _ = model(tokens, return_attn=True)
+        logits, attn_maps, _ = model(token_tensor, return_attn=True)
     for layer_idx, attn in enumerate(attn_maps):
         for head_idx in range(attn.size(1)):
             out_path = out_dir / f"{model_type}_layer{layer_idx}_head{head_idx}.png"
-            plot_attention(attn, seq, layer_idx, head_idx, out_path)
+            plot_attention(attn, display_tokens, layer_idx, head_idx, out_path)
 
 
-def run_activation_viz(model, cfg, model_type: str, seq_types: Tuple[str, ...], out_dir: Path):
-    batches = build_batches(seq_types, cfg, samples_per_type=16, seq_len=min(cfg.max_seq_len, 24), pad_token_id=cfg.pad_token_id)
+def build_file_batches(sequences: List[List[int]], pad_token_id: int, seq_len: int, samples: int = 16, seed: int = 0) -> Dict[str, torch.Tensor]:
+    rng = torch.Generator().manual_seed(seed)
+    indices = torch.randperm(len(sequences), generator=rng)[: min(samples, len(sequences))]
+    batch = torch.full((indices.numel(), seq_len), pad_token_id, dtype=torch.long)
+    for i, idx in enumerate(indices):
+        seq = sequences[int(idx)]
+        truncated = seq[:seq_len]
+        batch[i, : len(truncated)] = torch.tensor(truncated, dtype=torch.long)
+    return {"file": batch}
+
+
+def run_activation_viz(
+    model,
+    cfg,
+    model_type: str,
+    seq_types: Tuple[str, ...],
+    out_dir: Path,
+    batches: Optional[Dict[str, torch.Tensor]] = None,
+):
+    if batches is None:
+        batches = build_batches(seq_types, cfg, samples_per_type=16, seq_len=min(cfg.max_seq_len, 24), pad_token_id=cfg.pad_token_id)
     summary = {}
     for seq_type, batch in batches.items():
         batch = batch.to(cfg.device)
@@ -161,9 +250,12 @@ def run_activation_viz(model, cfg, model_type: str, seq_types: Tuple[str, ...], 
     for key, per_type in summary.items():
         types = list(per_type.keys())
         mat = torch.stack([per_type[t] for t in types])  # (types, neurons)
-        # top neurons
-        top_vals, top_idx = torch.topk(mat, k=2, dim=0)
-        scores = (top_vals[0] - top_vals[1]).numpy()
+        # top neurons (handle single-type case)
+        if mat.size(0) >= 2:
+            top_vals, _ = torch.topk(mat, k=2, dim=0)
+            scores = (top_vals[0] - top_vals[1]).numpy()
+        else:
+            scores = mat[0].numpy()
         top_neurons = scores.argsort()[-10:][::-1]
         neuron_ids = [int(n) for n in top_neurons.tolist()]
         idx_tensor = torch.tensor(neuron_ids, device=mat.device)
@@ -191,53 +283,90 @@ def evaluate_long_range(model, cfg, seq_types: Tuple[str, ...], seq_len: int) ->
 def main():
     args = parse_args()
     device = torch.device(args.device)
-    seq_types: Tuple[str, ...] = tuple(args.seq_types.split(","))
     out_root = Path(args.output_dir) / f"run-{timestamp()}"
     out_root.mkdir(parents=True, exist_ok=True)
 
-    data_cfg = TrainingConfig(
-        vocab_size=args.vocab_size,
-        batch_size=args.batch_size,
-        epochs=args.epochs,
-        learning_rate=args.learning_rate,
-        weight_decay=args.weight_decay,
-        seq_min_len=args.seq_min_len,
-        seq_max_len=args.seq_max_len,
-        train_per_type=args.train_per_type,
-        val_per_type=args.val_per_type,
-        test_per_type=args.test_per_type,
-    )
+    file_meta: Optional[Dict] = None
+    loaders: Optional[Tuple[torch.utils.data.DataLoader, torch.utils.data.DataLoader, torch.utils.data.DataLoader]] = None
+    if args.data_file:
+        data_cfg, loaders, file_meta = prepare_file_dataset(args)
+        args.vocab_size = data_cfg.vocab_size
+        args.seq_min_len = data_cfg.seq_min_len
+        args.seq_max_len = data_cfg.seq_max_len
+        seq_types: Tuple[str, ...] = ("file",)
+    else:
+        seq_types = tuple(args.seq_types.split(","))
+        data_cfg = TrainingConfig(
+            vocab_size=args.vocab_size,
+            batch_size=args.batch_size,
+            epochs=args.epochs,
+            learning_rate=args.learning_rate,
+            weight_decay=args.weight_decay,
+            seq_min_len=args.seq_min_len,
+            seq_max_len=args.seq_max_len,
+            train_per_type=args.train_per_type,
+            val_per_type=args.val_per_type,
+            test_per_type=args.test_per_type,
+        )
 
     baseline_model, b_cfg, b_hist, b_metrics, b_ckpt = maybe_train_model(
-        "baseline", args, data_cfg, seq_types, out_root, args.baseline_ckpt if args.skip_train else None
+        "baseline", args, data_cfg, seq_types, out_root, args.baseline_ckpt if args.skip_train else None, loaders=loaders
     )
     linear_model, l_cfg, l_hist, l_metrics, l_ckpt = maybe_train_model(
-        "linear", args, data_cfg, seq_types, out_root, args.linear_ckpt if args.skip_train else None
+        "linear", args, data_cfg, seq_types, out_root, args.linear_ckpt if args.skip_train else None, loaders=loaders
     )
 
     combined_loss_plot(b_hist or {}, l_hist or {}, out_root / "loss_compare.png")
 
     # Long-range eval
-    long_loss_b, long_acc_b = evaluate_long_range(baseline_model, b_cfg, seq_types, args.long_seq_len)
-    long_loss_l, long_acc_l = evaluate_long_range(linear_model, l_cfg, seq_types, args.long_seq_len)
+    long_range = {}
+    if not args.data_file:
+        long_loss_b, long_acc_b = evaluate_long_range(baseline_model, b_cfg, seq_types, args.long_seq_len)
+        long_loss_l, long_acc_l = evaluate_long_range(linear_model, l_cfg, seq_types, args.long_seq_len)
+        long_range = {
+            "baseline": {"loss": long_loss_b, "acc": long_acc_b},
+            "linear": {"loss": long_loss_l, "acc": long_acc_l},
+        }
 
     # Interpretability snapshots
     run_embedding_viz(baseline_model, b_cfg, "baseline", out_root / "baseline_embedding_pca.png")
     run_embedding_viz(linear_model, l_cfg, "linear", out_root / "linear_embedding_pca.png")
     attn_dir = out_root / "attention"
-    run_attention_viz(baseline_model, b_cfg, "baseline", "arithmetic", 12, attn_dir)
-    run_attention_viz(linear_model, l_cfg, "linear", "arithmetic", 12, attn_dir)
+    if file_meta:
+        attn_tokens = file_meta["remapped_sequences"][0][: args.attn_seq_len]
+        attn_display = file_meta["raw_sequences"][0][: args.attn_seq_len]
+        run_attention_viz(baseline_model, b_cfg, "baseline", "file", len(attn_tokens), attn_dir, tokens=attn_tokens, display_tokens=attn_display)
+        run_attention_viz(linear_model, l_cfg, "linear", "file", len(attn_tokens), attn_dir, tokens=attn_tokens, display_tokens=attn_display)
+    else:
+        run_attention_viz(baseline_model, b_cfg, "baseline", "arithmetic", 12, attn_dir)
+        run_attention_viz(linear_model, l_cfg, "linear", "arithmetic", 12, attn_dir)
     act_dir = out_root / "activations"
-    run_activation_viz(baseline_model, b_cfg, "baseline", seq_types, act_dir)
-    run_activation_viz(linear_model, l_cfg, "linear", seq_types, act_dir)
+    if file_meta:
+        act_seq_len = min(args.activation_seq_len, data_cfg.seq_max_len)
+        batches = build_file_batches(file_meta["remapped_sequences"], data_cfg.pad_token_id, seq_len=act_seq_len, samples=16)
+        run_activation_viz(baseline_model, b_cfg, "baseline", ("file",), act_dir, batches=batches)
+        run_activation_viz(linear_model, l_cfg, "linear", ("file",), act_dir, batches=batches)
+    else:
+        run_activation_viz(baseline_model, b_cfg, "baseline", seq_types, act_dir)
+        run_activation_viz(linear_model, l_cfg, "linear", seq_types, act_dir)
 
+    dataset_info = None
+    if file_meta:
+        stats = file_meta["stats"]
+        dataset_info = {
+            "source": str(Path(args.data_file)),
+            "num_sequences": stats.num_sequences,
+            "num_unique_tokens": stats.num_unique_tokens,
+            "max_token": stats.max_token,
+            "min_len": stats.min_len,
+            "max_len": stats.max_len,
+            "vocab_size": stats.vocab_size,
+        }
     summary = {
         "baseline": b_metrics,
         "linear": l_metrics,
-        "long_range": {
-            "baseline": {"loss": long_loss_b, "acc": long_acc_b},
-            "linear": {"loss": long_loss_l, "acc": long_acc_l},
-        },
+        "long_range": long_range,
+        "dataset": dataset_info,
         "artifacts": {
             "baseline_ckpt": str(b_ckpt),
             "linear_ckpt": str(l_ckpt),

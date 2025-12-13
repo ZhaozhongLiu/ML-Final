@@ -6,10 +6,15 @@ python analysis/activations.py --checkpoint results/baseline/run-*/baseline_chec
 """
 
 import argparse
+import os
 import random
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+import matplotlib
+
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/mplconfig")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch

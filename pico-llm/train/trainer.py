@@ -1,7 +1,12 @@
+import os
 import time
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+import matplotlib
+
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/mplconfig")
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
