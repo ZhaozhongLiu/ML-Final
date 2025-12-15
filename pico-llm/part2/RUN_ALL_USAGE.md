@@ -40,6 +40,46 @@ DEVICE=cpu bash pico-llm/part2/run_all.sh
 Artifacts go to:
 - `pico-llm/part2/runs/<timestamp>/`
 
+### Logging (stdout+stderr)
+`run_all.sh` automatically writes a full log while still printing to the terminal:
+- `pico-llm/part2/runs/<RUN_TAG>/output.log`
+
+You can pin the run directory name:
+```bash
+RUN_TAG=my-run-001 DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
+```
+
+---
+
+## 1.1) Run safely over SSH (screen/tmux)
+
+If your SSH session drops, the run can die unless you detach it.
+
+### Option A: use the provided wrapper (recommended)
+```bash
+RUN_TAG=my-run-001 DEVICE=cuda:0 bash pico-llm/part2/run_detached.sh
+```
+
+Then attach:
+- screen: `screen -r pico-part2-my-run-001`
+- tmux: `tmux attach -t pico-part2-my-run-001`
+
+### Option B: manual screen
+```bash
+screen -S pico-part2
+RUN_TAG=my-run-001 DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
+# detach: Ctrl-a d
+# reattach: screen -r pico-part2
+```
+
+### Option C: manual tmux
+```bash
+tmux new -s pico-part2
+RUN_TAG=my-run-001 DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
+# detach: Ctrl-b d
+# reattach: tmux attach -t pico-part2
+```
+
 ---
 
 ## 2) Use DeepSeek API to generate SFT/DPO datasets (default)
@@ -144,3 +184,4 @@ Inside `pico-llm/part2/runs/<timestamp>/`:
 - `checkpoints/transformer_final.pt`, `checkpoints/transformer_sft.pt`, `checkpoints/transformer_dpo.pt`
 - `metrics/metrics.json`
 - `plots/curves.png`
+- `output.log` (full stdout+stderr)

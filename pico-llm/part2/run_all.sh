@@ -44,8 +44,8 @@ HF_ENDPOINT_TINY="${HF_ENDPOINT_TINY:-}"
 HF_ENDPOINT_FALLBACK="${HF_ENDPOINT_FALLBACK:-https://hf-mirror.com}"
 HF_HUB_DISABLE_TELEMETRY="${HF_HUB_DISABLE_TELEMETRY:-1}"
 
-TS="$(date +"%Y%m%d-%H%M%S")"
-RUN_DIR="${PART2_DIR}/runs/${TS}"
+RUN_TAG="${RUN_TAG:-$(date +"%Y%m%d-%H%M%S")}"
+RUN_DIR="${PART2_DIR}/runs/${RUN_TAG}"
 DATA_DIR="${RUN_DIR}/data"
 CKPT_DIR="${RUN_DIR}/checkpoints"
 METRICS_DIR="${RUN_DIR}/metrics"
@@ -54,6 +54,17 @@ PLOTS_DIR="${RUN_DIR}/plots"
 mkdir -p "${DATA_DIR}" "${CKPT_DIR}" "${METRICS_DIR}" "${PLOTS_DIR}"
 
 "${PY}" -m pip install -r "${PART2_DIR}/requirements.txt"
+
+# Log everything to file while still printing to terminal.
+OUTPUT_LOG="${OUTPUT_LOG:-${RUN_DIR}/output.log}"
+mkdir -p "$(dirname "${OUTPUT_LOG}")"
+exec > >(tee -a "${OUTPUT_LOG}") 2>&1
+
+echo "[part2] run_tag=${RUN_TAG}"
+echo "[part2] run_dir=${RUN_DIR}"
+echo "[part2] logging to ${OUTPUT_LOG}"
+
+echo "[part2] installing requirements..."
 
 echo "[part2] generating datasets -> ${DATA_DIR}"
 LLM_MODEL=""
