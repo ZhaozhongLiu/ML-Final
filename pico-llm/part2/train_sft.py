@@ -36,6 +36,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--log_every", type=int, default=50)
     p.add_argument("--eval_every", type=int, default=1, help="Run val evaluation every N epochs.")
     p.add_argument("--max_train_seconds", type=int, default=0, help="0 = unlimited. Stops training after this wall time.")
+    p.add_argument("--progress_interval_seconds", type=int, default=60, help="Print progress about every N seconds.")
     return p.parse_args()
 
 
@@ -105,6 +106,7 @@ def main() -> None:
     optim = torch.optim.AdamW(model.parameters(), lr=args.lr)
     global_step = 0
     start = time.time()
+    next_progress = start + max(1, int(args.progress_interval_seconds or 60))
     log_f = None
     if args.log_jsonl:
         Path(args.log_jsonl).parent.mkdir(parents=True, exist_ok=True)
@@ -126,6 +128,11 @@ def main() -> None:
             loss.backward()
             optim.step()
             running += float(loss.item())
+            now = time.time()
+            if now >= next_progress:
+                elapsed = now - start
+                print(f"[sft] Progress: epoch={epoch}/{args.epochs} step={global_step} elapsed={elapsed:.0f}s last_loss={float(loss.item()):.4f}")
+                next_progress = now + max(1, int(args.progress_interval_seconds or 60))
             if args.log_every > 0 and global_step % args.log_every == 0:
                 avg = running / args.log_every
                 running = 0.0

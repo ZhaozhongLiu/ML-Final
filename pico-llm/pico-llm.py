@@ -75,6 +75,8 @@ def parse_args():
                         help="Generate sample text every N seconds. Default=30.")
     parser.add_argument("--max_train_seconds", type=int, default=None,
                         help="Optional wall-time limit (seconds) per model training run. If set, stop training when exceeded.")
+    parser.add_argument("--progress_interval_seconds", type=int, default=60,
+                        help="Print a lightweight progress line every N seconds during training. Default=60.")
     parser.add_argument("--val_split", type=float, default=0.1,
                         help="Fraction of data reserved for validation. Default=0.1.")
     parser.add_argument("--test_split", type=float, default=0.0,
@@ -762,6 +764,7 @@ def train_one_model(model,
                     sample_interval=30,
                     max_steps_per_epoch=None,
                     max_train_seconds=None,
+                    progress_interval_seconds=60,
                     enc=None,
                     monosemantic_info=None,
                     prompt="Once upon a",
@@ -776,6 +779,8 @@ def train_one_model(model,
 
     start_time = time.time()
     next_sample_time = start_time
+    progress_interval_seconds = max(1, int(progress_interval_seconds or 60))
+    next_progress_time = start_time + progress_interval_seconds
     global_step = 0
     overfit_history = [] if overfit_options is not None else None
 
@@ -819,6 +824,13 @@ def train_one_model(model,
                 partial_count = 0
 
             current_time = time.time()
+            if current_time >= next_progress_time:
+                denom = max(1, partial_count)
+                avg_part_loss = partial_loss / denom
+                elapsed = current_time - start_time
+                print(f"[{model_name}] Progress: epoch={epoch}/{epochs} step={batch_idx}/{len(loader)} "
+                      f"global_step={global_step} elapsed={elapsed:.0f}s partial_loss={avg_part_loss:.4f}")
+                next_progress_time = current_time + progress_interval_seconds
             if current_time >= next_sample_time and enc is not None:
                 with torch.no_grad():
                     # Periodically sample text for qualitative check / 定期生成文本方便观察模型学习情况
@@ -1216,6 +1228,7 @@ def main():
             sample_interval=sample_interval_seconds,
             max_steps_per_epoch=max_steps_per_epoch,
             max_train_seconds=args.max_train_seconds,
+            progress_interval_seconds=args.progress_interval_seconds,
             enc=enc,
             prompt=args.prompt,  # <--- Pass the user-specified prompt here
             val_loader=val_loader,

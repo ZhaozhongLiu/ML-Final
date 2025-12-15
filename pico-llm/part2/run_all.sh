@@ -15,6 +15,7 @@ PRETRAIN_MAX_STEPS="${PRETRAIN_MAX_STEPS:-2000}"
 PRETRAIN_MAX_SECONDS="${PRETRAIN_MAX_SECONDS:-14400}"   # 4 hours
 SFT_MAX_SECONDS="${SFT_MAX_SECONDS:-1800}"              # 30 minutes
 DPO_MAX_SECONDS="${DPO_MAX_SECONDS:-1800}"              # 30 minutes
+PROGRESS_INTERVAL_SECONDS="${PROGRESS_INTERVAL_SECONDS:-60}"
 SFT_EPOCHS="${SFT_EPOCHS:-9999}"
 DPO_EPOCHS="${DPO_EPOCHS:-9999}"
 BASE_CKPT_OVERRIDE="${BASE_CKPT_OVERRIDE:-}"
@@ -140,6 +141,7 @@ else
         --device_id "${DEVICE}" \
         --num_epochs 9999 \
         --max_train_seconds "${PRETRAIN_MAX_SECONDS}" \
+        --progress_interval_seconds "${PROGRESS_INTERVAL_SECONDS}" \
         --batch_size 16 \
         --learning_rate 3e-4 \
         --train_subset_size "${PRETRAIN_SUBSET_SIZE}" \
@@ -194,6 +196,7 @@ if [[ -s "${DATA_DIR}/sft_train.jsonl" && -s "${DATA_DIR}/sft_val.jsonl" ]]; the
     --device "${DEVICE}" \
     --epochs "${SFT_EPOCHS}" \
     --max_train_seconds "${SFT_MAX_SECONDS}" \
+    --progress_interval_seconds "${PROGRESS_INTERVAL_SECONDS}" \
     --eval_every 5 \
     --batch_size 8 \
     --lr 5e-5 \
@@ -216,6 +219,7 @@ if [[ -s "${DATA_DIR}/dpo_train.jsonl" && -s "${DATA_DIR}/dpo_val.jsonl" ]]; the
     --device "${DEVICE}" \
     --epochs "${DPO_EPOCHS}" \
     --max_train_seconds "${DPO_MAX_SECONDS}" \
+    --progress_interval_seconds "${PROGRESS_INTERVAL_SECONDS}" \
     --eval_every 5 \
     --batch_size 4 \
     --lr 2e-5 \
