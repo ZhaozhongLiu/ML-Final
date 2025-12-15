@@ -1,0 +1,85 @@
+flowchart TD
+  %% This diagram is based on your original architecture sketch,
+  %% extended to include the new SFT + DPO (part2) pipeline.
+
+  subgraph Inference["Autoregressive Inference (generate_text)"]
+    direction TB
+    IT["Input tokens"] --> MT{"Model type"}
+
+    MT -->|Transformer| T_OUT
+    MT -->|LSTM| L_OUT
+    MT -->|k-gram MLP| K_OUT
+
+    subgraph T["Transformer (decoder-only)"]
+      direction TB
+      TE["Token embedding"] --> PE["Positional encoding\n(learned / sinusoidal / RoPE / none)"]
+      PE --> DR["Dropout"]
+      DR --> REP["Repeat N blocks"]
+      REP --> FN["Final RMSNorm"]
+      FN --> HEAD["Linear head -> vocab logits"]
+
+      subgraph TBLOCK["One Transformer block (repeated)"]
+        direction TB
+        N1["Norm"] --> SA["Causal self-attention"]
+        SA --> R1["Residual add"]
+        R1 --> N2["Norm"]
+        N2 --> MLP["MLP: Linear -> GELU/SiLU -> Linear -> Dropout"]
+        MLP --> R2["Residual add"]
+      end
+    end
+
+    subgraph L["LSTM"]
+      direction TB
+      LE["Token embedding"] --> LSTM["LSTM"] --> LHEAD["Linear -> vocab logits"]
+    end
+
+    subgraph K["k-gram MLP"]
+      direction TB
+      WIN["Window last k tokens\n-> one-hot flatten"] --> H1["Linear + SiLU blocks"] --> KHEAD["Linear -> vocab logits"]
+    end
+  end
+
+  %% ------------------------------------------------------------
+  %% New part2 pipeline (SFT + DPO + metrics)
+  %% ------------------------------------------------------------
+
+  subgraph Part2["Training & Post-training Pipeline (part2)"]
+    direction TB
+    RUN["run_all.sh\n(one-shot entrypoint)"]
+
+    %% Data sources
+    RUN --> GEN["make_datasets.py\nGenerate JSONL splits\n- SFT: (input/prompt, response)\n- DPO: (input/prompt, chosen, rejected)"]
+
+    %% Base model training
+    RUN --> PRE["pico-llm.py (pretrain)\nNext-token CE on TinyStories/custom text\nOutput: transformer_final.pt\n(or BASE_CKPT_OVERRIDE)"]
+
+    %% SFT stage
+    GEN --> SFTDATA["SFT dataset\nprompt/spec -> story"]
+    PRE --> SFTTRAIN["train_sft.py\nMasked next-token CE\n(loss only on response tokens)\nOutput: transformer_sft.pt\nLog: logs_sft.jsonl"]
+    SFTDATA --> SFTTRAIN
+
+    %% DPO stage
+    GEN --> DPODATA["DPO dataset\nsame prompt -> {chosen, rejected}"]
+    SFTTRAIN --> DPOTRAIN["train_dpo.py\nDPO (or IPO) objective\nOptional label smoothing\nOutput: transformer_dpo.pt\nLog: logs_dpo.jsonl"]
+    DPODATA --> DPOTRAIN
+
+    %% DPO inner mechanics (what the loss uses)
+    subgraph DPOCore["DPO core computation (per batch)"]
+      direction TB
+      P1["Policy model (trainable)\nstarts from SFT checkpoint"] --> PC["log π(chosen|prompt)"]
+      P1 --> PR["log π(rejected|prompt)"]
+      R0["Reference model (frozen)\nusually same checkpoint"] --> RC["log π_ref(chosen|prompt)"]
+      R0 --> RR["log π_ref(rejected|prompt)"]
+      PC --> ADV["log-ratio advantage\n(π_c-π_r) - (ref_c-ref_r)"]
+      PR --> ADV
+      RC --> ADV
+      RR --> ADV
+      ADV --> LOSS["Loss: -log sigmoid(β * advantage)\n(or IPO variant)"]
+    end
+    DPOTRAIN -. uses .-> DPOCore
+
+    %% Metrics + plots
+    DPOTRAIN --> EVAL["evaluate.py\nMetrics:\n- sft_test_loss\n- dpo_test_pref_acc\n- sample generations + horror lexicon\nOutput: metrics.json"]
+    DPOTRAIN --> PLOT["plot_curves.py\nPlot:\n- SFT monitor (chosen vs rejected logprob)\n- DPO rewards (chosen vs rejected)\nOutput: curves.png"]
+  end
+

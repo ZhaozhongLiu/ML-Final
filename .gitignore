@@ -36,9 +36,9 @@ overfit_report*.json
 tiny_overfit*.json
 tiny_overfit*.txt
 optional_tasks_summary.txt
+pico-llm/part2/runs/
 
 # Local reference copy kept outside the repo history
 pico-llm\ \(original\)/
 
-#pdfs
-*.pdf
+
