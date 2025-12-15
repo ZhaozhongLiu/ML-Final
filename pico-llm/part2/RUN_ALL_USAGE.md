@@ -18,6 +18,10 @@ Files:
 ---
 
 ## 1) Quick start (recommended)
+### Check if remote VM has any GPUs:
+```bash
+nvidia-smi
+```
 
 ### Run on GPU
 ```bash
