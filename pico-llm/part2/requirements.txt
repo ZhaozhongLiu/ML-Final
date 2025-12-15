@@ -1,0 +1,6 @@
+torch
+tiktoken
+datasets
+tqdm
+matplotlib
+openai>=1.0.0

@@ -1,0 +1,35 @@
+{
+  "ts": 1765801269,
+  "results": [
+    {
+      "url": "https://huggingface.co",
+      "ok": false,
+      "error": "<urlopen error [Errno 101] Network is unreachable>",
+      "time_ms": 5049
+    },
+    {
+      "url": "https://hf-mirror.com",
+      "ok": true,
+      "status": 200,
+      "time_ms": 451
+    },
+    {
+      "url": "https://hf-mirror.com/roneneldan/TinyStories",
+      "ok": true,
+      "status": 200,
+      "time_ms": 1405
+    },
+    {
+      "url": "https://api.deepseek.com",
+      "ok": false,
+      "status": 401,
+      "time_ms": 186
+    },
+    {
+      "url": "https://openai.com",
+      "ok": false,
+      "status": 403,
+      "time_ms": 5620
+    }
+  ]
+}

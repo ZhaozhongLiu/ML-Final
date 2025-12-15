@@ -1,0 +1,8 @@
+flowchart TD
+  A["run_all.sh"] --> B["make_datasets.py\n生成 sft_*.jsonl / dpo_*.jsonl"]
+  B --> C["pico-llm.py\n预训练 base transformer\n输出 transformer_final.pt"]
+  C --> D["train_sft.py\nSFT 微调\n输出 transformer_sft.pt\n写 logs_sft.jsonl"]
+  D --> E["train_dpo.py\nDPO/IPO\n输出 transformer_dpo.pt\n写 logs_dpo.jsonl"]
+  E --> F["evaluate.py\n输出 metrics.json\n(含 loss / pref_acc / samples)"]
+  E --> G["plot_curves.py\n输出 curves.png"]
+
