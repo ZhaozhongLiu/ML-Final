@@ -10,7 +10,7 @@ from .story_generators import format_prompt, sample_story_spec
 
 
 def _provider_choices():
-    return ["template", "chatgpt"]
+    return ["template", "chatgpt", "deepseek"]
 
 
 def _safe_split(rows, n_train: int, n_val: int, n_test: int):
@@ -36,11 +36,12 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Generate template-based SFT and DPO datasets (JSONL).")
     p.add_argument("--out_dir", type=str, required=True, help="Output directory for JSONL splits.")
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--provider", type=str, default="template", choices=_provider_choices())
-    p.add_argument("--openai_model", type=str, default="gpt-4o-mini", help="Used when --provider=chatgpt.")
-    p.add_argument("--openai_temperature", type=float, default=0.8, help="Used when --provider=chatgpt.")
-    p.add_argument("--openai_max_output_tokens", type=int, default=500, help="Used when --provider=chatgpt.")
-    p.add_argument("--openai_max_retries", type=int, default=5, help="Used when --provider=chatgpt.")
+    p.add_argument("--provider", type=str, default="deepseek", choices=_provider_choices())
+    p.add_argument("--openai_model", type=str, default="gpt-4o-mini", help="Used when --provider=chatgpt/deepseek.")
+    p.add_argument("--openai_base_url", type=str, default=None, help="Optional base URL override for OpenAI-compatible APIs.")
+    p.add_argument("--openai_temperature", type=float, default=0.8, help="Used when --provider=chatgpt/deepseek.")
+    p.add_argument("--openai_max_output_tokens", type=int, default=500, help="Used when --provider=chatgpt/deepseek.")
+    p.add_argument("--openai_max_retries", type=int, default=5, help="Used when --provider=chatgpt/deepseek.")
     p.add_argument(
         "--openai_fallback",
         type=str,
@@ -66,6 +67,14 @@ def main() -> None:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Make CLI default safe: if default provider key is missing, fall back to template.
+    if args.provider == "deepseek" and not __import__("os").environ.get("DEEPSEEK_API_KEY"):
+        print("WARN: provider=deepseek but DEEPSEEK_API_KEY is not set; falling back to template.")
+        args.provider = "template"
+    if args.provider == "chatgpt" and not __import__("os").environ.get("OPENAI_API_KEY"):
+        print("WARN: provider=chatgpt but OPENAI_API_KEY is not set; falling back to template.")
+        args.provider = "template"
+
     sft_total = args.n_sft_train + args.n_sft_val + args.n_sft_test
     dpo_total = args.n_dpo_train + args.n_dpo_val + args.n_dpo_test
 
@@ -80,12 +89,29 @@ def main() -> None:
         from .chatgpt_api import ChatGPTClient, ChatGPTClientConfig
         from .story_generators import write_horror_story, write_wholesome_story
 
-        cfg = ChatGPTClientConfig(
-            model=args.openai_model,
-            temperature=float(args.openai_temperature),
-            max_output_tokens=int(args.openai_max_output_tokens),
-            max_retries=int(args.openai_max_retries),
-        )
+        if args.provider == "deepseek":
+            # DeepSeek is OpenAI-compatible; defaults: env DEEPSEEK_API_KEY and base URL api.deepseek.com
+            cfg = ChatGPTClientConfig(
+                model=args.openai_model,
+                base_url=args.openai_base_url or "https://api.deepseek.com",
+                api_key_env="DEEPSEEK_API_KEY",
+                base_url_env="DEEPSEEK_BASE_URL",
+                use_response_format_json=False,
+                temperature=float(args.openai_temperature),
+                max_output_tokens=int(args.openai_max_output_tokens),
+                max_retries=int(args.openai_max_retries),
+            )
+        else:
+            cfg = ChatGPTClientConfig(
+                model=args.openai_model,
+                base_url=args.openai_base_url,
+                api_key_env="OPENAI_API_KEY",
+                base_url_env="OPENAI_BASE_URL",
+                use_response_format_json=True,
+                temperature=float(args.openai_temperature),
+                max_output_tokens=int(args.openai_max_output_tokens),
+                max_retries=int(args.openai_max_retries),
+            )
         client = ChatGPTClient(cfg)
         # Fail fast if auth/network broken.
         client.ping()
@@ -192,11 +218,13 @@ def main() -> None:
         "openai_model": args.openai_model if args.provider == "chatgpt" else None,
         "openai_temperature": float(args.openai_temperature) if args.provider == "chatgpt" else None,
         "openai_fallback": args.openai_fallback if args.provider == "chatgpt" else None,
+        "deepseek_model": args.openai_model if args.provider == "deepseek" else None,
+        "deepseek_base_url": (args.openai_base_url or "https://api.deepseek.com") if args.provider == "deepseek" else None,
         "openai_budget": {
             "max_calls": int(args.openai_max_calls),
             "max_total_tokens": int(args.openai_max_total_tokens),
         }
-        if args.provider == "chatgpt"
+        if args.provider in {"chatgpt", "deepseek"}
         else None,
         "sizes": {
             "sft_total": sft_total,
@@ -211,7 +239,7 @@ def main() -> None:
             "dpo": {"train": len(dpo_train), "val": len(dpo_val), "test": len(dpo_test)},
         },
     }
-    if args.provider == "chatgpt":
+    if args.provider in {"chatgpt", "deepseek"}:
         meta["openai_usage"] = client.usage()
     (out_dir / "dataset_meta.json").write_text(__import__("json").dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 

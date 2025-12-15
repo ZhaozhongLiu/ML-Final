@@ -19,31 +19,37 @@ bash pico-llm/part2/run_all.sh
 
 Artifacts are written under `pico-llm/part2/runs/<timestamp>/`.
 
-## Using ChatGPT API for dataset generation
-Set `OPENAI_API_KEY` and choose the provider:
+## Using DeepSeek API for dataset generation (default)
+Set `DEEPSEEK_API_KEY` and use `DATA_PROVIDER=deepseek` (this is the default in `run_all.sh`):
 ```bash
-export OPENAI_API_KEY="..."
-DATA_PROVIDER=chatgpt OPENAI_MODEL=gpt-4o-mini DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
+export DEEPSEEK_API_KEY="..."
+DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
 ```
 
 ### Robust behavior
 - `run_all.sh` checks API connectivity first; if it fails, it automatically falls back to `template` generation.
-- If the API stops returning valid outputs mid-run, `make_datasets.py` can fall back to `template` per-example (`OPENAI_FALLBACK=template`, default).
+- If the API stops returning valid outputs mid-run, `make_datasets.py` can fall back to `template` per-example (`LLM_FALLBACK=template`, default).
 
 ### Budget controls (recommended)
 To cap cost, set either a maximum number of calls or a maximum total token budget (from API `usage.total_tokens`):
 ```bash
-export OPENAI_API_KEY="..."
-DATA_PROVIDER=chatgpt OPENAI_MAX_CALLS=200 DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
+export DEEPSEEK_API_KEY="..."
+LLM_MAX_CALLS=200 DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
 # or:
-DATA_PROVIDER=chatgpt OPENAI_MAX_TOTAL_TOKENS=200000 DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
+LLM_MAX_TOTAL_TOKENS=200000 DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
 ```
 
 ### Batch generation (fewer API calls)
 Generate multiple examples per API request:
 ```bash
+export DEEPSEEK_API_KEY="..."
+LLM_BATCH_SIZE=4 DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
+```
+
+## Using OpenAI ChatGPT API (optional)
+```bash
 export OPENAI_API_KEY="..."
-DATA_PROVIDER=chatgpt OPENAI_BATCH_SIZE=4 DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
+DATA_PROVIDER=chatgpt OPENAI_MODEL=gpt-4o-mini DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
 ```
 
 ## Notes

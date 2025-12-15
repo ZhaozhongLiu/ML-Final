@@ -10,8 +10,10 @@ The goal is to fix environment/path/dependency issues **without breaking the pip
 You are debugging a remote run of this repo. Do NOT redesign the project. Preserve these non-negotiable contracts:
 
 1) `pico-llm/part2/run_all.sh` must remain the single one-shot entrypoint and keep its environment-variable interface:
-   - `DEVICE`, `DATA_PROVIDER`, `OPENAI_MODEL`, `OPENAI_TEMPERATURE`, `OPENAI_MAX_OUTPUT_TOKENS`, `OPENAI_MAX_RETRIES`
-   - `OPENAI_FALLBACK`, `OPENAI_MAX_CONSEC_FAILS`, `OPENAI_MAX_CALLS`, `OPENAI_MAX_TOTAL_TOKENS`
+   - `DEVICE`, `DATA_PROVIDER`, `OPENAI_MODEL`
+   - `DEEPSEEK_MODEL`, `DEEPSEEK_BASE_URL`
+   - `LLM_TEMPERATURE`, `LLM_MAX_OUTPUT_TOKENS`, `LLM_MAX_RETRIES`, `LLM_BATCH_SIZE`
+   - `LLM_FALLBACK`, `LLM_MAX_CONSEC_FAILS`, `LLM_MAX_CALLS`, `LLM_MAX_TOTAL_TOKENS`
    - `BASE_CKPT_OVERRIDE`, `SFT_EPOCHS`, `DPO_EPOCHS`
 
 2) Dataset schema must stay compatible:
@@ -27,7 +29,7 @@ You are debugging a remote run of this repo. Do NOT redesign the project. Preser
    - Logs: `logs_sft.jsonl` and `logs_dpo.jsonl`
 
 4) Keep resilience:
-   - API connectivity check must remain (if ChatGPT API fails, fall back to template)
+   - API connectivity check must remain (if DeepSeek/OpenAI API fails, fall back to template)
    - If API fails mid-run, pipeline must continue via fallback/partial data (no hard crash)
 
 Allowed changes:
@@ -36,7 +38,6 @@ Allowed changes:
 
 Forbidden changes:
 - Do NOT change model architecture, training objectives, loss definitions, or dataset formats.
-- Do NOT hardcode or print `OPENAI_API_KEY`.
+- Do NOT hardcode or print `OPENAI_API_KEY` or `DEEPSEEK_API_KEY`.
 
 Start by reproducing the error, identifying the root cause, and proposing the smallest patch that preserves the above contracts. Provide the exact commands to test the fix.
-

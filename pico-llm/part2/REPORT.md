@@ -134,34 +134,39 @@ DPO 行结构：
 
 ---
 
-### Step A0（新增）：改为可选用 ChatGPT API 生成数据
+### Step A0（新增）：改为可选用大模型 API 生成数据（默认 DeepSeek）
 
-你最新要求是“用 ChatGPT 的 API 来做”。我没有删除模板生成器，而是做成 **两种 provider**：
-- `template`：完全离线，随时可跑（默认）
-- `chatgpt`：调用 OpenAI ChatGPT API 生成数据（需要 `OPENAI_API_KEY`）
+我没有删除模板生成器，而是做成 **三种 provider**：
+- `template`：完全离线，随时可跑
+- `deepseek`：调用 DeepSeek（OpenAI-compatible）API 生成数据（默认，需要 `DEEPSEEK_API_KEY`）
+- `chatgpt`：调用 OpenAI ChatGPT API 生成数据（可选，需要 `OPENAI_API_KEY`）
 
 #### A0.1 API Key 放哪里？
 
 为安全起见，API key **不写死在代码里**，而是通过环境变量传入：
 
 ```bash
-export OPENAI_API_KEY="..."
-DATA_PROVIDER=chatgpt bash pico-llm/part2/run_all.sh
+export DEEPSEEK_API_KEY="..."
+bash pico-llm/part2/run_all.sh
 ```
 
 这样你把项目传到云端时，只需要在环境里设置 key，不会把 key 提交到 git 或写进日志。
 
 #### A0.2 默认模型（最便宜且适合本任务）
 
-默认使用：
-- `OPENAI_MODEL=gpt-4o-mini`
+默认使用 DeepSeek：
+- `DATA_PROVIDER=deepseek`
+- `DEEPSEEK_MODEL=deepseek-chat`
+- `DEEPSEEK_BASE_URL=https://api.deepseek.com`
 
-这是目前常用的“便宜且够用”的选择（可通过环境变量覆盖）。
+OpenAI（可选）默认：
+- `DATA_PROVIDER=chatgpt`
+- `OPENAI_MODEL=gpt-4o-mini`
 
 #### A0.3 先检测 API 能不能用（health check）
 
 为了避免一键跑到一半才发现 key/网络有问题：
-- `run_all.sh` 在 `DATA_PROVIDER=chatgpt` 时会先运行 `part2.check_openai` 做一次极小请求验证  
+- `run_all.sh` 在 `DATA_PROVIDER=deepseek` 或 `DATA_PROVIDER=chatgpt` 时会先运行 `part2.check_openai` 做一次极小请求验证  
 - 若检测失败，**自动 fallback** 到 `template`，不中断后面的训练/评测流程
 
 检测脚本在：
@@ -182,10 +187,10 @@ def ping(self) -> None:
 你要求“如果 api 不给东西了，就当作训练部分完成，继续别的操作”。我做了两层保护：
 
 1) **数据生成阶段的逐样本降级**（在 `make_datasets.py`）  
-   - 当 `provider=chatgpt` 时，每条数据单独请求 API  
+   - 当 `provider=deepseek` 或 `provider=chatgpt` 时，每条数据单独请求 API（可选开启 batch，一次请求多条）  
    - 若某条失败：
-     - 默认 `OPENAI_FALLBACK=template`：用模板生成补齐这一条（保证数据量完整）
-     - 或者 `OPENAI_FALLBACK=stop`：直接停止生成，保留已生成的部分
+     - 默认 `LLM_FALLBACK=template`：用模板生成补齐这一条（保证数据量完整）
+     - 或者 `LLM_FALLBACK=stop`：直接停止生成，保留已生成的部分
 
 对应逻辑（简化）：
 
@@ -213,22 +218,22 @@ except Exception:
 - SFT：`256 + 64 + 64 = 384` 条
 - DPO：`256 + 64 + 64 = 384` 条（每条包含 chosen+rejected）
 
-当 `DATA_PROVIDER=chatgpt` 时：
+当 `DATA_PROVIDER` 为 `deepseek` 或 `chatgpt` 时：
 - SFT：每条 1 次 API 调用 → **384 calls**
 - DPO：每条 pair 1 次 API 调用 → **384 calls**
 - 合计 **768 calls**
 
-如果你开启批量生成（`OPENAI_BATCH_SIZE>1`），calls 会近似按比例下降（例如 batch=4 时 calls 约减少到 1/4，外加少量失败重试）。
+如果你开启批量生成（`LLM_BATCH_SIZE>1`），calls 会近似按比例下降（例如 batch=4 时 calls 约减少到 1/4，外加少量失败重试）。
 
 #### 预计 token 用量（粗略上限）
 
 每次调用的输出 token 上限由：
-- `OPENAI_MAX_OUTPUT_TOKENS` 控制（`run_all.sh` 默认 1200）
+- `LLM_MAX_OUTPUT_TOKENS` 控制（`run_all.sh` 默认 1200）
 
 因此输出 token 的粗略上界是：
 
 ```
-max_output_tokens_total ≈ calls_total * OPENAI_MAX_OUTPUT_TOKENS
+max_output_tokens_total ≈ calls_total * LLM_MAX_OUTPUT_TOKENS
                         ≈ 768 * 1200
                         ≈ 921,600 output tokens
 ```
@@ -241,22 +246,22 @@ max_output_tokens_total ≈ calls_total * OPENAI_MAX_OUTPUT_TOKENS
 
 ```bash
 # 成本阈值（0 表示不限制）
-OPENAI_MAX_CALLS=200
-OPENAI_MAX_TOTAL_TOKENS=200000
+LLM_MAX_CALLS=200
+LLM_MAX_TOTAL_TOKENS=200000
 
 # API 连续失败阈值
-OPENAI_MAX_CONSEC_FAILS=3
+LLM_MAX_CONSEC_FAILS=3
 
 # 失败策略（默认 template）：失败就用模板补齐；或 stop：直接停止生成保留部分数据
-OPENAI_FALLBACK=template
+LLM_FALLBACK=template
 
 # 批量生成：每次 API 调用生成 N 条（减少 calls）
-OPENAI_BATCH_SIZE=4
+LLM_BATCH_SIZE=4
 ```
 
 实现位置：
 - 预算统计：`pico-llm/part2/chatgpt_api.py` 会从 API `usage` 累计 `calls/total_tokens`
-- 预算停止：`pico-llm/part2/make_datasets.py` 在每次请求前检查 `OPENAI_MAX_CALLS/OPENAI_MAX_TOTAL_TOKENS`
+- 预算停止：`pico-llm/part2/make_datasets.py` 在每次请求前检查 `LLM_MAX_CALLS/LLM_MAX_TOTAL_TOKENS`
 - API 可用性检测：`pico-llm/part2/check_openai.py`（`run_all.sh` 会先跑它）
 - 真实用量会被写入：`runs/.../data/dataset_meta.json`（字段 `openai_usage`）
 
@@ -476,29 +481,35 @@ BASE_CKPT_OVERRIDE=/path/to/transformer_final.pt
 SFT_EPOCHS=9999
 DPO_EPOCHS=9999
 
-# 选择数据生成方式：template（默认）| chatgpt
-DATA_PROVIDER=template
+# 选择数据生成方式：deepseek（默认）| chatgpt | template
+DATA_PROVIDER=deepseek
 
-# ChatGPT API 相关（当 DATA_PROVIDER=chatgpt 时生效）
-OPENAI_MODEL=gpt-4o-mini
-OPENAI_TEMPERATURE=0.8
-OPENAI_MAX_OUTPUT_TOKENS=1200
-OPENAI_MAX_RETRIES=5
+# DeepSeek（默认，OpenAI-compatible）
+DEEPSEEK_MODEL=deepseek-chat
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+
+# 生成参数（deepseek/chatgpt 共用）
+LLM_TEMPERATURE=0.8
+LLM_MAX_OUTPUT_TOKENS=1200
+LLM_MAX_RETRIES=5
 
 # API 失败时策略：
 # - template：单条失败就用模板补齐（默认，保证数据量）
 # - stop：直接停止生成，保留部分数据并继续后续训练/评测
-OPENAI_FALLBACK=template
-OPENAI_MAX_CONSEC_FAILS=3
+LLM_FALLBACK=template
+LLM_MAX_CONSEC_FAILS=3
 
 # 成本/用量阈值（建议设置其一；0 表示不限制）
-# - OPENAI_MAX_CALLS：最多发多少次 API 请求（一次请求生成一条 SFT 或一条 DPO pair）
-# - OPENAI_MAX_TOTAL_TOKENS：API 返回的 usage.total_tokens 累计上限
-OPENAI_MAX_CALLS=0
-OPENAI_MAX_TOTAL_TOKENS=2500000
+# - LLM_MAX_CALLS：最多发多少次 API 请求（一次请求生成一条 SFT 或一条 DPO pair；batch>1 时一次生成多条）
+# - LLM_MAX_TOTAL_TOKENS：API 返回的 usage.total_tokens 累计上限
+LLM_MAX_CALLS=0
+LLM_MAX_TOTAL_TOKENS=2500000
 
 # 批量生成：每次 API 调用生成 N 条（减少 calls，默认 4）
-OPENAI_BATCH_SIZE=4
+LLM_BATCH_SIZE=4
+
+# OpenAI ChatGPT（可选）
+OPENAI_MODEL=gpt-4o-mini
 ```
 
 ---
@@ -515,21 +526,23 @@ DEVICE=cpu bash pico-llm/part2/run_all.sh
 DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
 ```
 
+> 默认 `DATA_PROVIDER=deepseek`：如果你设置了 `DEEPSEEK_API_KEY` 就会用 DeepSeek 生成训练数据；否则脚本会自动回落到 `template` 数据生成。
+
 3) 如果你已经有一个训练好的 `transformer_final.pt`：
 ```bash
 DEVICE=cuda:0 BASE_CKPT_OVERRIDE=/your/transformer_final.pt bash pico-llm/part2/run_all.sh
 ```
 
-4) 用 ChatGPT API 生成数据（最常用）：
+4) 用 DeepSeek API 生成数据（默认推荐）：
 ```bash
-export OPENAI_API_KEY="..."
-DATA_PROVIDER=chatgpt DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
+export DEEPSEEK_API_KEY="..."
+DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
 ```
 
 5) 如果你希望 API 一旦失败就直接停（保留部分数据继续训练）：
 ```bash
-export OPENAI_API_KEY="..."
-DATA_PROVIDER=chatgpt OPENAI_FALLBACK=stop DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
+export DEEPSEEK_API_KEY="..."
+LLM_FALLBACK=stop DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
 ```
 
 ---
@@ -542,8 +555,8 @@ DATA_PROVIDER=chatgpt OPENAI_FALLBACK=stop DEVICE=cuda:0 bash pico-llm/part2/run
 ### 路线 A（推荐）：直接用 ChatGPT API provider
 
 你不需要改代码，只需要：
-- 设置 `OPENAI_API_KEY`
-- `DATA_PROVIDER=chatgpt`
+- DeepSeek（默认）：设置 `DEEPSEEK_API_KEY`，`DATA_PROVIDER=deepseek`
+- OpenAI（可选）：设置 `OPENAI_API_KEY`，`DATA_PROVIDER=chatgpt`
 
 数据生成代码在：
 - `pico-llm/part2/chatgpt_api.py`
@@ -621,9 +634,9 @@ loss = -log sigmoid(beta * advantage)
 
 1) **先做 API 检测**：`run_all.sh` 会先跑 `part2.check_openai`，失败自动回退模板数据，避免卡住。
 2) **失败不停机**：
-   - 默认 `OPENAI_FALLBACK=template`：某条样本生成失败就用模板补齐（保证数据量）
-   - 或设 `OPENAI_FALLBACK=stop`：直接停止生成，保留部分数据继续训练
+   - 默认 `LLM_FALLBACK=template`：某条样本生成失败就用模板补齐（保证数据量）
+   - 或设 `LLM_FALLBACK=stop`：直接停止生成，保留部分数据继续训练
 3) **预算阈值**：建议你远程必设其一：
-   - `OPENAI_MAX_CALLS`
-   - 或 `OPENAI_MAX_TOTAL_TOKENS`
+   - `LLM_MAX_CALLS`
+   - 或 `LLM_MAX_TOTAL_TOKENS`
 4) **记录真实用量**：生成数据后看 `runs/.../data/dataset_meta.json` 的 `openai_usage`

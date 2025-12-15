@@ -12,7 +12,9 @@ Files:
 
 - Python: `python3`
 - GPU (optional): CUDA available if you set `DEVICE=cuda:0`
-- If using ChatGPT API for dataset generation:
+- If using DeepSeek API for dataset generation (default):
+  - `DEEPSEEK_API_KEY` must be set
+- If using OpenAI ChatGPT API for dataset generation:
   - `OPENAI_API_KEY` must be set
 
 ---
@@ -38,32 +40,32 @@ Artifacts go to:
 
 ---
 
-## 2) Use ChatGPT API to generate SFT/DPO datasets
+## 2) Use DeepSeek API to generate SFT/DPO datasets (default)
 
 ```bash
-export OPENAI_API_KEY="..."
-DATA_PROVIDER=chatgpt DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
+export DEEPSEEK_API_KEY="..."
+DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
 ```
 
 ### “Batch mode” (fewer API calls)
-This does NOT use the OpenAI async Batch API; it simply asks for multiple examples per request.
+This does NOT use any async Batch API; it simply asks for multiple examples per request.
 ```bash
-export OPENAI_API_KEY="..."
-DATA_PROVIDER=chatgpt OPENAI_BATCH_SIZE=4 DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
+export DEEPSEEK_API_KEY="..."
+LLM_BATCH_SIZE=4 DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
 ```
 
 ### Cost/budget caps (strongly recommended)
 Set at least one:
 ```bash
-export OPENAI_API_KEY="..."
-DATA_PROVIDER=chatgpt OPENAI_MAX_TOTAL_TOKENS=2500000 DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
+export DEEPSEEK_API_KEY="..."
+LLM_MAX_TOTAL_TOKENS=2500000 DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
 # or:
-DATA_PROVIDER=chatgpt OPENAI_MAX_CALLS=300 DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
+LLM_MAX_CALLS=300 DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
 ```
 
 If the API fails:
 - The script runs a connectivity check first and falls back to template generation if it fails.
-- Mid-run failures default to per-example template fallback (`OPENAI_FALLBACK=template`).
+- Mid-run failures default to per-example template fallback (`LLM_FALLBACK=template`).
 
 ---
 
@@ -101,19 +103,27 @@ BASE_CKPT_OVERRIDE=/path/to/transformer_final.pt DEVICE=cuda:0 bash pico-llm/par
 - `DPO_MAX_SECONDS`
 
 ### Dataset provider
-- `DATA_PROVIDER` (`template` or `chatgpt`)
+- `DATA_PROVIDER` (`deepseek` (default), `chatgpt`, or `template`)
 
-### ChatGPT API (only if `DATA_PROVIDER=chatgpt`)
-- `OPENAI_MODEL` (default `gpt-4o-mini`)
-- `OPENAI_TEMPERATURE` (default `0.8`)
-- `OPENAI_MAX_OUTPUT_TOKENS` (default `1200`)
-- `OPENAI_MAX_RETRIES` (default `5`)
-- `OPENAI_BATCH_SIZE` (default `4`)
-- `OPENAI_FALLBACK` (`template` or `stop`)
-- `OPENAI_MAX_CONSEC_FAILS` (default `3`)
+### DeepSeek API (default provider)
+- `DEEPSEEK_API_KEY` (required when `DATA_PROVIDER=deepseek`)
+- `DEEPSEEK_MODEL` (default `deepseek-chat`)
+- `DEEPSEEK_BASE_URL` (default `https://api.deepseek.com`)
+
+### Generic LLM generation knobs (used for both deepseek/chatgpt)
+- `LLM_TEMPERATURE` (default `0.8`)
+- `LLM_MAX_OUTPUT_TOKENS` (default `1200`)
+- `LLM_MAX_RETRIES` (default `5`)
+- `LLM_BATCH_SIZE` (default `4`)
+- `LLM_FALLBACK` (`template` or `stop`)
+- `LLM_MAX_CONSEC_FAILS` (default `3`)
 - Budget caps:
-  - `OPENAI_MAX_CALLS` (0 = unlimited)
-  - `OPENAI_MAX_TOTAL_TOKENS` (0 = unlimited)
+  - `LLM_MAX_CALLS` (0 = unlimited)
+  - `LLM_MAX_TOTAL_TOKENS` (0 = unlimited)
+
+### OpenAI ChatGPT API (optional, only if `DATA_PROVIDER=chatgpt`)
+- `OPENAI_API_KEY` (required)
+- `OPENAI_MODEL` (default `gpt-4o-mini`)
 
 ### Pretrain data (TinyStories-only by default)
 - `PRETRAIN_SUBSET_SIZE` (default `50000`)
@@ -128,4 +138,3 @@ Inside `pico-llm/part2/runs/<timestamp>/`:
 - `checkpoints/transformer_final.pt`, `checkpoints/transformer_sft.pt`, `checkpoints/transformer_dpo.pt`
 - `metrics/metrics.json`
 - `plots/curves.png`
-

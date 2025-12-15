@@ -18,16 +18,24 @@ DPO_MAX_SECONDS="${DPO_MAX_SECONDS:-1800}"              # 30 minutes
 SFT_EPOCHS="${SFT_EPOCHS:-9999}"
 DPO_EPOCHS="${DPO_EPOCHS:-9999}"
 BASE_CKPT_OVERRIDE="${BASE_CKPT_OVERRIDE:-}"
-DATA_PROVIDER="${DATA_PROVIDER:-template}"   # template | chatgpt
-OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"  # default: cheapest suitable model
-OPENAI_TEMPERATURE="${OPENAI_TEMPERATURE:-0.8}"
-OPENAI_MAX_OUTPUT_TOKENS="${OPENAI_MAX_OUTPUT_TOKENS:-1200}"
-OPENAI_MAX_RETRIES="${OPENAI_MAX_RETRIES:-5}"
-OPENAI_FALLBACK="${OPENAI_FALLBACK:-template}"  # template | stop
-OPENAI_MAX_CONSEC_FAILS="${OPENAI_MAX_CONSEC_FAILS:-3}"
-OPENAI_MAX_CALLS="${OPENAI_MAX_CALLS:-0}"              # 0 = unlimited
-OPENAI_MAX_TOTAL_TOKENS="${OPENAI_MAX_TOTAL_TOKENS:-2500000}" # token budget (approx $5-ish for gpt-4o-mini, adjust as needed)
-OPENAI_BATCH_SIZE="${OPENAI_BATCH_SIZE:-4}"            # >=1; batch multiple specs per API call
+DATA_PROVIDER="${DATA_PROVIDER:-deepseek}"   # template | deepseek | chatgpt
+
+# DeepSeek (OpenAI-compatible) defaults
+DEEPSEEK_MODEL="${DEEPSEEK_MODEL:-deepseek-chat}"
+DEEPSEEK_BASE_URL="${DEEPSEEK_BASE_URL:-https://api.deepseek.com}"
+
+# Generic generation knobs (used for both deepseek/chatgpt providers)
+LLM_TEMPERATURE="${LLM_TEMPERATURE:-0.8}"
+LLM_MAX_OUTPUT_TOKENS="${LLM_MAX_OUTPUT_TOKENS:-1200}"
+LLM_MAX_RETRIES="${LLM_MAX_RETRIES:-5}"
+LLM_FALLBACK="${LLM_FALLBACK:-template}"          # template | stop
+LLM_MAX_CONSEC_FAILS="${LLM_MAX_CONSEC_FAILS:-3}"
+LLM_MAX_CALLS="${LLM_MAX_CALLS:-0}"               # 0 = unlimited
+LLM_MAX_TOTAL_TOKENS="${LLM_MAX_TOTAL_TOKENS:-2500000}" # token budget target (~$5; adjust per pricing)
+LLM_BATCH_SIZE="${LLM_BATCH_SIZE:-4}"             # >=1; batch multiple specs per API call
+
+# OpenAI ChatGPT provider (optional)
+OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
 
 TS="$(date +"%Y%m%d-%H%M%S")"
 RUN_DIR="${PART2_DIR}/runs/${TS}"
@@ -41,7 +49,40 @@ mkdir -p "${DATA_DIR}" "${CKPT_DIR}" "${METRICS_DIR}" "${PLOTS_DIR}"
 "${PY}" -m pip install -r "${PART2_DIR}/requirements.txt"
 
 echo "[part2] generating datasets -> ${DATA_DIR}"
-if [[ "${DATA_PROVIDER}" == "chatgpt" ]]; then
+LLM_MODEL=""
+LLM_BASE_URL=""
+LLM_API_KEY_ENV=""
+LLM_BASE_URL_ENV=""
+LLM_USE_RESPONSE_FORMAT_JSON="1"
+
+if [[ "${DATA_PROVIDER}" == "deepseek" ]]; then
+  LLM_MODEL="${DEEPSEEK_MODEL}"
+  LLM_BASE_URL="${DEEPSEEK_BASE_URL}"
+  LLM_API_KEY_ENV="DEEPSEEK_API_KEY"
+  LLM_BASE_URL_ENV="DEEPSEEK_BASE_URL"
+  LLM_USE_RESPONSE_FORMAT_JSON="0"
+  if [[ -z "${DEEPSEEK_API_KEY:-}" ]]; then
+    echo "[part2] WARN: DATA_PROVIDER=deepseek but DEEPSEEK_API_KEY is not set; falling back to template."
+    DATA_PROVIDER="template"
+  else
+    echo "[part2] checking DeepSeek API connectivity..."
+    if ! PYTHONPATH="${ROOT_DIR}/pico-llm" "${PY}" -m part2.check_openai \
+      --model "${LLM_MODEL}" \
+      --base_url "${LLM_BASE_URL}" \
+      --api_key_env "${LLM_API_KEY_ENV}" \
+      --base_url_env "${LLM_BASE_URL_ENV}" \
+      --use_response_format_json "${LLM_USE_RESPONSE_FORMAT_JSON}" \
+      --max_retries 2; then
+      echo "[part2] WARN: DeepSeek API check failed; falling back to template."
+      DATA_PROVIDER="template"
+    fi
+  fi
+elif [[ "${DATA_PROVIDER}" == "chatgpt" ]]; then
+  LLM_MODEL="${OPENAI_MODEL}"
+  LLM_BASE_URL="${OPENAI_BASE_URL:-}"
+  LLM_API_KEY_ENV="OPENAI_API_KEY"
+  LLM_BASE_URL_ENV="OPENAI_BASE_URL"
+  LLM_USE_RESPONSE_FORMAT_JSON="1"
   if [[ -z "${OPENAI_API_KEY:-}" ]]; then
     echo "[part2] WARN: DATA_PROVIDER=chatgpt but OPENAI_API_KEY is not set; falling back to template."
     DATA_PROVIDER="template"
@@ -59,15 +100,16 @@ PYTHONPATH="${ROOT_DIR}/pico-llm" "${PY}" -m part2.make_datasets \
   --out_dir "${DATA_DIR}" \
   --seed 0 \
   --provider "${DATA_PROVIDER}" \
-  --openai_model "${OPENAI_MODEL}" \
-  --openai_temperature "${OPENAI_TEMPERATURE}" \
-  --openai_max_output_tokens "${OPENAI_MAX_OUTPUT_TOKENS}" \
-  --openai_max_retries "${OPENAI_MAX_RETRIES}" \
-  --openai_fallback "${OPENAI_FALLBACK}" \
-  --openai_max_consecutive_failures "${OPENAI_MAX_CONSEC_FAILS}" \
-  --openai_max_calls "${OPENAI_MAX_CALLS}" \
-  --openai_max_total_tokens "${OPENAI_MAX_TOTAL_TOKENS}" \
-  --openai_batch_size "${OPENAI_BATCH_SIZE}" \
+  --openai_model "${LLM_MODEL:-${OPENAI_MODEL}}" \
+  --openai_base_url "${LLM_BASE_URL}" \
+  --openai_temperature "${LLM_TEMPERATURE}" \
+  --openai_max_output_tokens "${LLM_MAX_OUTPUT_TOKENS}" \
+  --openai_max_retries "${LLM_MAX_RETRIES}" \
+  --openai_fallback "${LLM_FALLBACK}" \
+  --openai_max_consecutive_failures "${LLM_MAX_CONSEC_FAILS}" \
+  --openai_max_calls "${LLM_MAX_CALLS}" \
+  --openai_max_total_tokens "${LLM_MAX_TOTAL_TOKENS}" \
+  --openai_batch_size "${LLM_BATCH_SIZE}" \
   --n_sft_train 256 --n_sft_val 64 --n_sft_test 64 \
   --n_dpo_train 256 --n_dpo_val 64 --n_dpo_test 64
 DATASET_RC=$?

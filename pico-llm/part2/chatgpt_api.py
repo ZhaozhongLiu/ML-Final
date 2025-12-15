@@ -34,6 +34,9 @@ def _extract_json(text: str) -> Dict[str, Any]:
 class ChatGPTClientConfig:
     model: str = "gpt-4o-mini"
     base_url: Optional[str] = None
+    api_key_env: str = "OPENAI_API_KEY"
+    base_url_env: str = "OPENAI_BASE_URL"
+    use_response_format_json: bool = True
     temperature: float = 0.8
     max_output_tokens: int = 500
     max_retries: int = 5
@@ -51,10 +54,10 @@ class ChatGPTClient:
 
     def __init__(self, cfg: ChatGPTClientConfig):
         self.cfg = cfg
-        api_key = os.environ.get("OPENAI_API_KEY")
+        api_key = os.environ.get(cfg.api_key_env)
         if not api_key:
-            raise ChatGPTAPIError("Missing OPENAI_API_KEY env var.")
-        base_url = cfg.base_url or os.environ.get("OPENAI_BASE_URL")
+            raise ChatGPTAPIError(f"Missing {cfg.api_key_env} env var.")
+        base_url = cfg.base_url or os.environ.get(cfg.base_url_env)
         self._client = None
         self._api_key = api_key
         self._base_url = base_url
@@ -86,7 +89,7 @@ class ChatGPTClient:
             try:
                 kwargs = {}
                 # Best-effort JSON mode (model-dependent). If unsupported, we still parse heuristically.
-                if want_json:
+                if want_json and self.cfg.use_response_format_json:
                     kwargs["response_format"] = {"type": "json_object"}
                 resp = client.chat.completions.create(
                     model=self.cfg.model,
