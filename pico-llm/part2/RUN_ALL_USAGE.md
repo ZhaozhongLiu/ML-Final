@@ -175,6 +175,10 @@ BASE_CKPT_OVERRIDE=/path/to/transformer_final.pt DEVICE=cuda:0 bash pico-llm/par
 - `HF_ENDPOINT_TINY` (optional; e.g. `https://hf-mirror.com` for regions where huggingface.co is blocked)
 - `HF_ENDPOINT_FALLBACK` (default `https://hf-mirror.com`)
 
+### Network diagnostics (optional)
+- `NETWORK_PROBE` (default `1`): writes `runs/<RUN_TAG>/network_probe.json` using `part2.check_network`
+- `NETWORK_PROBE_TIMEOUT` (default `5` seconds per URL)
+
 ---
 
 ## 6) What to check after it finishes

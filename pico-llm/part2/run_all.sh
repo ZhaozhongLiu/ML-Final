@@ -43,6 +43,8 @@ OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
 HF_ENDPOINT_TINY="${HF_ENDPOINT_TINY:-}"
 HF_ENDPOINT_FALLBACK="${HF_ENDPOINT_FALLBACK:-https://hf-mirror.com}"
 HF_HUB_DISABLE_TELEMETRY="${HF_HUB_DISABLE_TELEMETRY:-1}"
+NETWORK_PROBE="${NETWORK_PROBE:-1}"
+NETWORK_PROBE_TIMEOUT="${NETWORK_PROBE_TIMEOUT:-5}"
 
 RUN_TAG="${RUN_TAG:-$(date +"%Y%m%d-%H%M%S")}"
 RUN_DIR="${PART2_DIR}/runs/${RUN_TAG}"
@@ -52,8 +54,6 @@ METRICS_DIR="${RUN_DIR}/metrics"
 PLOTS_DIR="${RUN_DIR}/plots"
 
 mkdir -p "${DATA_DIR}" "${CKPT_DIR}" "${METRICS_DIR}" "${PLOTS_DIR}"
-
-"${PY}" -m pip install -r "${PART2_DIR}/requirements.txt"
 
 # Log everything to file while still printing to terminal.
 OUTPUT_LOG="${OUTPUT_LOG:-${RUN_DIR}/output.log}"
@@ -65,6 +65,12 @@ echo "[part2] run_dir=${RUN_DIR}"
 echo "[part2] logging to ${OUTPUT_LOG}"
 
 echo "[part2] installing requirements..."
+"${PY}" -m pip install -r "${PART2_DIR}/requirements.txt"
+
+if [[ "${NETWORK_PROBE}" == "1" ]]; then
+  echo "[part2] network probe -> ${RUN_DIR}/network_probe.json"
+  PYTHONPATH="${ROOT_DIR}/pico-llm" NETWORK_PROBE_TIMEOUT="${NETWORK_PROBE_TIMEOUT}" "${PY}" -m part2.check_network | tee "${RUN_DIR}/network_probe.json" >/dev/null
+fi
 
 echo "[part2] generating datasets -> ${DATA_DIR}"
 LLM_MODEL=""
@@ -141,13 +147,57 @@ if [[ -n "${BASE_CKPT_OVERRIDE}" ]]; then
   echo "[part2] using BASE_CKPT_OVERRIDE=${BASE_CKPT_OVERRIDE}"
   cp -f "${BASE_CKPT_OVERRIDE}" "${CKPT_DIR}/transformer_final.pt"
 else
+  # If HF is blocked, prefer the mirror to avoid long retries.
+  if [[ -z "${HF_ENDPOINT_TINY}" ]]; then
+    set +e
+    "${PY}" - <<'PY' >/dev/null 2>&1
+import urllib.request
+try:
+  urllib.request.urlopen("https://huggingface.co", timeout=2)
+  raise SystemExit(0)
+except Exception:
+  raise SystemExit(1)
+PY
+    HF_OFFICIAL_OK=$?
+    set -e
+    if [[ "${HF_OFFICIAL_OK}" -ne 0 ]]; then
+      HF_ENDPOINT_TINY="${HF_ENDPOINT_FALLBACK}"
+      echo "[part2] huggingface.co unreachable; using mirror HF_ENDPOINT_TINY=${HF_ENDPOINT_TINY}"
+    fi
+  fi
+
   pretrain_cmd() {
     local hf_endpoint="${1:-}"
     if [[ -n "${hf_endpoint}" ]]; then
       echo "[part2] pretrain using HF_ENDPOINT=${hf_endpoint}"
     fi
-    HF_ENDPOINT="${hf_endpoint}" HF_HUB_DISABLE_TELEMETRY="${HF_HUB_DISABLE_TELEMETRY}" \
-      "${PY}" "${ROOT_DIR}/pico-llm/pico-llm.py" \
+    if [[ -n "${hf_endpoint}" ]]; then
+      HF_ENDPOINT="${hf_endpoint}" HF_HUB_DISABLE_TELEMETRY="${HF_HUB_DISABLE_TELEMETRY}" \
+        "${PY}" "${ROOT_DIR}/pico-llm/pico-llm.py" \
+          --models transformer \
+          --device_id "${DEVICE}" \
+          --num_epochs 9999 \
+          --max_train_seconds "${PRETRAIN_MAX_SECONDS}" \
+          --progress_interval_seconds "${PROGRESS_INTERVAL_SECONDS}" \
+          --batch_size 16 \
+          --learning_rate 3e-4 \
+          --train_subset_size "${PRETRAIN_SUBSET_SIZE}" \
+          --block_size 512 \
+          --transformer_d_model 256 \
+          --transformer_num_heads 8 \
+          --transformer_num_layers 4 \
+          --transformer_mlp_ratio 4.0 \
+          --transformer_dropout 0.1 \
+          --max_steps_per_epoch "${PRETRAIN_MAX_STEPS}" \
+          --val_split 0.0 \
+          --log_interval_steps 200 \
+          --sample_interval_seconds 600 \
+          --tinystories_weight 1.0 \
+          --checkpoint_dir "${CKPT_DIR}" \
+          --prompt "Once upon a"
+    else
+      HF_HUB_DISABLE_TELEMETRY="${HF_HUB_DISABLE_TELEMETRY}" \
+        "${PY}" "${ROOT_DIR}/pico-llm/pico-llm.py" \
         --models transformer \
         --device_id "${DEVICE}" \
         --num_epochs 9999 \
@@ -169,20 +219,16 @@ else
         --tinystories_weight 1.0 \
         --checkpoint_dir "${CKPT_DIR}" \
         --prompt "Once upon a"
+    fi
   }
 
   set +e
-  if [[ -n "${HF_ENDPOINT_TINY}" ]]; then
-    pretrain_cmd "${HF_ENDPOINT_TINY}"
+  pretrain_cmd "${HF_ENDPOINT_TINY}"
+  PRETRAIN_RC=$?
+  if [[ "${PRETRAIN_RC}" -ne 0 && -z "${HF_ENDPOINT_TINY}" ]]; then
+    echo "[part2] WARN: pretrain failed; retrying with HF mirror: ${HF_ENDPOINT_FALLBACK}"
+    pretrain_cmd "${HF_ENDPOINT_FALLBACK}"
     PRETRAIN_RC=$?
-  else
-    pretrain_cmd ""
-    PRETRAIN_RC=$?
-    if [[ "${PRETRAIN_RC}" -ne 0 ]]; then
-      echo "[part2] WARN: pretrain failed; retrying with HF mirror: ${HF_ENDPOINT_FALLBACK}"
-      pretrain_cmd "${HF_ENDPOINT_FALLBACK}"
-      PRETRAIN_RC=$?
-    fi
   fi
   set -e
 

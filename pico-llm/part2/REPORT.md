@@ -440,6 +440,23 @@ loss = -logsigmoid(beta * logits)
 6) Evaluate：`part2.evaluate`
 7) Plot：`part2.plot_curves`
 
+### 网络受限（中国/部分云厂商）时 TinyStories 下载失败怎么办？
+
+你在 VM 上的探测结果显示：
+- `huggingface.co` 不可达
+- `hf-mirror.com` 可达
+
+因此 pretrain 阶段需要使用 HuggingFace 镜像。`run_all.sh` 已经支持：
+- 显式指定镜像：
+  ```bash
+  HF_ENDPOINT_TINY=https://hf-mirror.com DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
+  ```
+- 或者让脚本自动判断：如果检测到 `huggingface.co` 不可达，会自动把 `HF_ENDPOINT_TINY` 设成 `HF_ENDPOINT_FALLBACK`（默认 `https://hf-mirror.com`）。
+
+另外，`run_all.sh` 默认会写入一份网络探测 JSON：
+- `pico-llm/part2/runs/<RUN_TAG>/network_probe.json`
+你可以用 `NETWORK_PROBE=0` 关闭。
+
 ### 三个训练阶段分别训练到什么程度会停止？
 
 这套 pipeline 目前没有 “val 不再下降就 early-stop” 之类的自动停止逻辑；它是 **按 epoch/step 或按墙钟时间上限停止**（便于你上云端“一键跑”可控、可复现）。
@@ -543,6 +560,12 @@ DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
 ```bash
 export DEEPSEEK_API_KEY="..."
 LLM_FALLBACK=stop DEVICE=cuda:0 bash pico-llm/part2/run_all.sh
+```
+
+6) 在中国VM上这样跑最稳:
+```
+export DEEPSEEK_API_KEY="..."
+HF_ENDPOINT_TINY=https://hf-mirror.com DEVICE=cuda:0 RUN_TAG=cn-vm-001 bash pico-llm/part2/run_detached.sh
 ```
 
 ---
