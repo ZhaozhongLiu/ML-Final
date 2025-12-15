@@ -570,6 +570,43 @@ HF_ENDPOINT_TINY=https://hf-mirror.com DEVICE=cuda:0 RUN_TAG=cn-vm-001 bash pico
 
 ---
 
+## 6.1 远程运行：SSH 断线也不停（screen/tmux）+ 去哪里查看结果
+
+当你看到：
+```
+[part2] started screen session: pico-part2-cn-vm-001
+```
+就表示已经在后台运行了。
+
+### 实时查看输出（推荐）
+
+进入运行会话：
+```bash
+screen -r pico-part2-cn-vm-001
+```
+
+退出但不停止（detach）：按 `Ctrl-a` 然后按 `d`
+
+### 直接查看日志文件（不用进入 screen）
+
+`run_all.sh` 会把 stdout+stderr 同时写入：
+- `pico-llm/part2/runs/<RUN_TAG>/output.log`
+
+例如：
+```bash
+tail -f pico-llm/part2/runs/cn-vm-001/output.log
+```
+
+### 查看结果目录（checkpoints / metrics / plots）
+
+所有产物都在：
+- `pico-llm/part2/runs/<RUN_TAG>/`
+
+例如：
+```bash
+ls -la pico-llm/part2/runs/cn-vm-001/
+```
+
 ## 7. 后续你最可能要改的地方（把“模板生成”换成“用大模型生成”）
 
 你说 SFT 的 prompt-answer 数据集要由大模型生成；DPO 的 preference 也要由偏好规则生成。  
