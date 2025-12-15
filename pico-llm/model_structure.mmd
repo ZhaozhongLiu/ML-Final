@@ -1,0 +1,33 @@
+graph TD
+  Input[Input tokens] --> Choice[Model type]
+
+  subgraph KGram [k-gram MLP]
+    Choice --> k1[Window last k tokens -> one-hot flatten]
+    k1 --> k2[Linear + SiLU blocks]
+    k2 --> k3[Linear -> vocab logits]
+  end
+
+  subgraph LSTM [LSTM sequence model]
+    Choice --> l1[Token Embedding]
+    l1 --> l2[LSTM]
+    l2 --> l3[Linear -> vocab logits]
+  end
+
+  subgraph BaselineTF [Transformer Tiny]
+    Choice --> b1[Token Embedding]
+    b1 --> b2[Positional encoding]
+    b2 --> b3[Dropout]
+    b3 --> b4[Repeat N blocks]
+    b4 --> b5[LayerNorm]
+    b5 --> b6[Linear head -> vocab logits]
+
+    subgraph Block [Transformer block]
+      bn1[LayerNorm] --> attn[Self-attention]
+      attn --> add1[Residual add]
+      add1 --> bn2[LayerNorm]
+      bn2 --> mlp[MLP: Linear -> GELU -> Linear -> Dropout]
+      mlp --> add2[Residual add]
+    end
+
+    b4 --> bn1
+  end
