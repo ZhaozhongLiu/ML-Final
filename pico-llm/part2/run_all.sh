@@ -312,3 +312,8 @@ else
 fi
 
 echo "[part2] done: ${RUN_DIR}"
+
+echo "[part2] key outputs:"
+echo "  - log: ${OUTPUT_LOG}"
+echo "  - metrics: ${METRICS_DIR}/metrics.json"
+echo "  - curves: ${PLOTS_DIR}/curves.png"

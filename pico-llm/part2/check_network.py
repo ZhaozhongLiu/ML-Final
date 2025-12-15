@@ -18,7 +18,17 @@ def _probe(url: str, timeout_s: float, method: str = "GET") -> Dict[str, Any]:
     t0 = time.time()
     req = urllib.request.Request(url, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+        ctx = None
+        try:
+            import os, ssl
+            if os.environ.get("NETWORK_PROBE_INSECURE", "0") == "1":
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+        except Exception:
+            ctx = None
+
+        with urllib.request.urlopen(req, timeout=timeout_s, context=ctx) as resp:
             status = getattr(resp, "status", None)
             ok = (status is not None and 200 <= int(status) < 400)
             return {"url": url, "ok": bool(ok), "status": int(status) if status is not None else None, "time_ms": int((time.time() - t0) * 1000)}
@@ -47,4 +57,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
