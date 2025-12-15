@@ -1,0 +1,39 @@
+{
+  "generated_at": 1765801269.4606948,
+  "seed": 0,
+  "provider": "template",
+  "openai_model": null,
+  "openai_temperature": null,
+  "openai_fallback": null,
+  "deepseek_model": null,
+  "deepseek_base_url": null,
+  "openai_budget": null,
+  "sizes": {
+    "sft_total": 384,
+    "dpo_total": 384,
+    "sft": {
+      "train": 256,
+      "val": 64,
+      "test": 64
+    },
+    "dpo": {
+      "train": 256,
+      "val": 64,
+      "test": 64
+    }
+  },
+  "actual_counts": {
+    "sft_total": 384,
+    "dpo_total": 384,
+    "sft": {
+      "train": 256,
+      "val": 64,
+      "test": 64
+    },
+    "dpo": {
+      "train": 256,
+      "val": 64,
+      "test": 64
+    }
+  }
+}

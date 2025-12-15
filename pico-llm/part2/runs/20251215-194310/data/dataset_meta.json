@@ -1,0 +1,48 @@
+{
+  "generated_at": 1765799267.9635198,
+  "seed": 0,
+  "provider": "deepseek",
+  "openai_model": null,
+  "openai_temperature": null,
+  "openai_fallback": null,
+  "deepseek_model": "deepseek-chat",
+  "deepseek_base_url": "https://api.deepseek.com",
+  "openai_budget": {
+    "max_calls": 0,
+    "max_total_tokens": 2500000
+  },
+  "sizes": {
+    "sft_total": 384,
+    "dpo_total": 384,
+    "sft": {
+      "train": 256,
+      "val": 64,
+      "test": 64
+    },
+    "dpo": {
+      "train": 256,
+      "val": 64,
+      "test": 64
+    }
+  },
+  "actual_counts": {
+    "sft_total": 384,
+    "dpo_total": 384,
+    "sft": {
+      "train": 256,
+      "val": 64,
+      "test": 64
+    },
+    "dpo": {
+      "train": 256,
+      "val": 64,
+      "test": 64
+    }
+  },
+  "openai_usage": {
+    "calls": 7,
+    "prompt_tokens": 3686,
+    "completion_tokens": 7052,
+    "total_tokens": 10738
+  }
+}
