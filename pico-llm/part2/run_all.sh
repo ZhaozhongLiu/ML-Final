@@ -10,11 +10,24 @@ if ! command -v "${PY}" >/dev/null 2>&1; then
 fi
 
 DEVICE="${DEVICE:-cuda:0}"
-PRETRAIN_SUBSET_SIZE="${PRETRAIN_SUBSET_SIZE:-2000}"
-PRETRAIN_MAX_STEPS="${PRETRAIN_MAX_STEPS:-200}"
-SFT_EPOCHS="${SFT_EPOCHS:-1}"
-DPO_EPOCHS="${DPO_EPOCHS:-1}"
+PRETRAIN_SUBSET_SIZE="${PRETRAIN_SUBSET_SIZE:-50000}"
+PRETRAIN_MAX_STEPS="${PRETRAIN_MAX_STEPS:-2000}"
+PRETRAIN_MAX_SECONDS="${PRETRAIN_MAX_SECONDS:-14400}"   # 4 hours
+SFT_MAX_SECONDS="${SFT_MAX_SECONDS:-1800}"              # 30 minutes
+DPO_MAX_SECONDS="${DPO_MAX_SECONDS:-1800}"              # 30 minutes
+SFT_EPOCHS="${SFT_EPOCHS:-9999}"
+DPO_EPOCHS="${DPO_EPOCHS:-9999}"
 BASE_CKPT_OVERRIDE="${BASE_CKPT_OVERRIDE:-}"
+DATA_PROVIDER="${DATA_PROVIDER:-template}"   # template | chatgpt
+OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"  # default: cheapest suitable model
+OPENAI_TEMPERATURE="${OPENAI_TEMPERATURE:-0.8}"
+OPENAI_MAX_OUTPUT_TOKENS="${OPENAI_MAX_OUTPUT_TOKENS:-1200}"
+OPENAI_MAX_RETRIES="${OPENAI_MAX_RETRIES:-5}"
+OPENAI_FALLBACK="${OPENAI_FALLBACK:-template}"  # template | stop
+OPENAI_MAX_CONSEC_FAILS="${OPENAI_MAX_CONSEC_FAILS:-3}"
+OPENAI_MAX_CALLS="${OPENAI_MAX_CALLS:-0}"              # 0 = unlimited
+OPENAI_MAX_TOTAL_TOKENS="${OPENAI_MAX_TOTAL_TOKENS:-2500000}" # token budget (approx $5-ish for gpt-4o-mini, adjust as needed)
+OPENAI_BATCH_SIZE="${OPENAI_BATCH_SIZE:-4}"            # >=1; batch multiple specs per API call
 
 TS="$(date +"%Y%m%d-%H%M%S")"
 RUN_DIR="${PART2_DIR}/runs/${TS}"
@@ -28,9 +41,40 @@ mkdir -p "${DATA_DIR}" "${CKPT_DIR}" "${METRICS_DIR}" "${PLOTS_DIR}"
 "${PY}" -m pip install -r "${PART2_DIR}/requirements.txt"
 
 echo "[part2] generating datasets -> ${DATA_DIR}"
-PYTHONPATH="${ROOT_DIR}/pico-llm" "${PY}" -m part2.make_datasets --out_dir "${DATA_DIR}" --seed 0 \
+if [[ "${DATA_PROVIDER}" == "chatgpt" ]]; then
+  if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+    echo "[part2] WARN: DATA_PROVIDER=chatgpt but OPENAI_API_KEY is not set; falling back to template."
+    DATA_PROVIDER="template"
+  else
+    echo "[part2] checking OpenAI API connectivity..."
+    if ! PYTHONPATH="${ROOT_DIR}/pico-llm" "${PY}" -m part2.check_openai --model "${OPENAI_MODEL}" --max_retries 2; then
+      echo "[part2] WARN: OpenAI API check failed; falling back to template."
+      DATA_PROVIDER="template"
+    fi
+  fi
+fi
+
+set +e
+PYTHONPATH="${ROOT_DIR}/pico-llm" "${PY}" -m part2.make_datasets \
+  --out_dir "${DATA_DIR}" \
+  --seed 0 \
+  --provider "${DATA_PROVIDER}" \
+  --openai_model "${OPENAI_MODEL}" \
+  --openai_temperature "${OPENAI_TEMPERATURE}" \
+  --openai_max_output_tokens "${OPENAI_MAX_OUTPUT_TOKENS}" \
+  --openai_max_retries "${OPENAI_MAX_RETRIES}" \
+  --openai_fallback "${OPENAI_FALLBACK}" \
+  --openai_max_consecutive_failures "${OPENAI_MAX_CONSEC_FAILS}" \
+  --openai_max_calls "${OPENAI_MAX_CALLS}" \
+  --openai_max_total_tokens "${OPENAI_MAX_TOTAL_TOKENS}" \
+  --openai_batch_size "${OPENAI_BATCH_SIZE}" \
   --n_sft_train 256 --n_sft_val 64 --n_sft_test 64 \
   --n_dpo_train 256 --n_dpo_val 64 --n_dpo_test 64
+DATASET_RC=$?
+set -e
+if [[ "${DATASET_RC}" -ne 0 ]]; then
+  echo "[part2] WARN: dataset generation failed (rc=${DATASET_RC}); continuing anyway."
+fi
 
 echo "[part2] pretraining base transformer (TinyStories subset) -> ${CKPT_DIR}"
 if [[ -n "${BASE_CKPT_OVERRIDE}" ]]; then
@@ -40,17 +84,21 @@ else
   "${PY}" "${ROOT_DIR}/pico-llm/pico-llm.py" \
     --models transformer \
     --device_id "${DEVICE}" \
-    --num_epochs 1 \
-    --batch_size 8 \
+    --num_epochs 9999 \
+    --max_train_seconds "${PRETRAIN_MAX_SECONDS}" \
+    --batch_size 16 \
     --learning_rate 3e-4 \
     --train_subset_size "${PRETRAIN_SUBSET_SIZE}" \
-    --block_size 256 \
-    --transformer_d_model 128 \
-    --transformer_num_heads 4 \
-    --transformer_num_layers 2 \
-    --transformer_mlp_ratio 2.0 \
+    --block_size 512 \
+    --transformer_d_model 256 \
+    --transformer_num_heads 8 \
+    --transformer_num_layers 4 \
+    --transformer_mlp_ratio 4.0 \
     --transformer_dropout 0.1 \
     --max_steps_per_epoch "${PRETRAIN_MAX_STEPS}" \
+    --val_split 0.0 \
+    --log_interval_steps 200 \
+    --sample_interval_seconds 600 \
     --tinystories_weight 1.0 \
     --checkpoint_dir "${CKPT_DIR}" \
     --prompt "Once upon a"
@@ -61,34 +109,48 @@ SFT_CKPT="${CKPT_DIR}/transformer_sft.pt"
 DPO_CKPT="${CKPT_DIR}/transformer_dpo.pt"
 
 echo "[part2] SFT -> ${SFT_CKPT}"
-PYTHONPATH="${ROOT_DIR}/pico-llm" "${PY}" -m part2.train_sft \
-  --base_checkpoint "${BASE_CKPT}" \
-  --train_jsonl "${DATA_DIR}/sft_train.jsonl" \
-  --val_jsonl "${DATA_DIR}/sft_val.jsonl" \
-  --out_checkpoint "${SFT_CKPT}" \
-  --device "${DEVICE}" \
-  --epochs "${SFT_EPOCHS}" \
-  --batch_size 8 \
-  --lr 5e-5 \
-  --max_tokens 256 \
-  --monitor_dpo_jsonl "${DATA_DIR}/dpo_val.jsonl" \
-  --log_jsonl "${RUN_DIR}/logs_sft.jsonl"
+if [[ -s "${DATA_DIR}/sft_train.jsonl" && -s "${DATA_DIR}/sft_val.jsonl" ]]; then
+  PYTHONPATH="${ROOT_DIR}/pico-llm" "${PY}" -m part2.train_sft \
+    --base_checkpoint "${BASE_CKPT}" \
+    --train_jsonl "${DATA_DIR}/sft_train.jsonl" \
+    --val_jsonl "${DATA_DIR}/sft_val.jsonl" \
+    --out_checkpoint "${SFT_CKPT}" \
+    --device "${DEVICE}" \
+    --epochs "${SFT_EPOCHS}" \
+    --max_train_seconds "${SFT_MAX_SECONDS}" \
+    --eval_every 5 \
+    --batch_size 8 \
+    --lr 5e-5 \
+    --max_tokens 256 \
+    --monitor_dpo_jsonl "${DATA_DIR}/dpo_val.jsonl" \
+    --log_jsonl "${RUN_DIR}/logs_sft.jsonl"
+else
+  echo "[part2] WARN: missing/empty SFT JSONL; skipping SFT stage."
+  cp -f "${BASE_CKPT}" "${SFT_CKPT}"
+fi
 
 echo "[part2] DPO -> ${DPO_CKPT}"
-PYTHONPATH="${ROOT_DIR}/pico-llm" "${PY}" -m part2.train_dpo \
-  --policy_checkpoint "${SFT_CKPT}" \
-  --ref_checkpoint "${SFT_CKPT}" \
-  --train_jsonl "${DATA_DIR}/dpo_train.jsonl" \
-  --val_jsonl "${DATA_DIR}/dpo_val.jsonl" \
-  --out_checkpoint "${DPO_CKPT}" \
-  --device "${DEVICE}" \
-  --epochs "${DPO_EPOCHS}" \
-  --batch_size 4 \
-  --lr 2e-5 \
-  --beta 0.1 \
-  --label_smoothing 0.05 \
-  --max_tokens 256 \
-  --log_jsonl "${RUN_DIR}/logs_dpo.jsonl"
+if [[ -s "${DATA_DIR}/dpo_train.jsonl" && -s "${DATA_DIR}/dpo_val.jsonl" ]]; then
+  PYTHONPATH="${ROOT_DIR}/pico-llm" "${PY}" -m part2.train_dpo \
+    --policy_checkpoint "${SFT_CKPT}" \
+    --ref_checkpoint "${SFT_CKPT}" \
+    --train_jsonl "${DATA_DIR}/dpo_train.jsonl" \
+    --val_jsonl "${DATA_DIR}/dpo_val.jsonl" \
+    --out_checkpoint "${DPO_CKPT}" \
+    --device "${DEVICE}" \
+    --epochs "${DPO_EPOCHS}" \
+    --max_train_seconds "${DPO_MAX_SECONDS}" \
+    --eval_every 5 \
+    --batch_size 4 \
+    --lr 2e-5 \
+    --beta 0.1 \
+    --label_smoothing 0.05 \
+    --max_tokens 256 \
+    --log_jsonl "${RUN_DIR}/logs_dpo.jsonl"
+else
+  echo "[part2] WARN: missing/empty DPO JSONL; skipping DPO stage."
+  cp -f "${SFT_CKPT}" "${DPO_CKPT}"
+fi
 
 echo "[part2] evaluate -> ${METRICS_DIR}/metrics.json"
 PYTHONPATH="${ROOT_DIR}/pico-llm" "${PY}" -m part2.evaluate \
@@ -103,9 +165,13 @@ PYTHONPATH="${ROOT_DIR}/pico-llm" "${PY}" -m part2.evaluate \
   --sample_new_tokens 160
 
 echo "[part2] plot curves -> ${PLOTS_DIR}/curves.png"
-PYTHONPATH="${ROOT_DIR}/pico-llm" "${PY}" -m part2.plot_curves \
-  --sft_log_jsonl "${RUN_DIR}/logs_sft.jsonl" \
-  --dpo_log_jsonl "${RUN_DIR}/logs_dpo.jsonl" \
-  --out_png "${PLOTS_DIR}/curves.png"
+if [[ -s "${RUN_DIR}/logs_sft.jsonl" && -s "${RUN_DIR}/logs_dpo.jsonl" ]]; then
+  PYTHONPATH="${ROOT_DIR}/pico-llm" "${PY}" -m part2.plot_curves \
+    --sft_log_jsonl "${RUN_DIR}/logs_sft.jsonl" \
+    --dpo_log_jsonl "${RUN_DIR}/logs_dpo.jsonl" \
+    --out_png "${PLOTS_DIR}/curves.png"
+else
+  echo "[part2] WARN: missing logs JSONL; skipping plot."
+fi
 
 echo "[part2] done: ${RUN_DIR}"

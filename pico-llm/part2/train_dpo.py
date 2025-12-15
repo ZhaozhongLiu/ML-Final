@@ -36,6 +36,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--ipo", action="store_true", help="Use IPO loss instead of standard DPO.")
     p.add_argument("--max_tokens", type=int, default=256)
     p.add_argument("--log_every", type=int, default=50)
+    p.add_argument("--eval_every", type=int, default=1, help="Run val preference eval every N epochs.")
+    p.add_argument("--max_train_seconds", type=int, default=0, help="0 = unlimited. Stops training after this wall time.")
     return p.parse_args()
 
 
@@ -88,10 +90,14 @@ def main() -> None:
     if args.log_jsonl:
         Path(args.log_jsonl).parent.mkdir(parents=True, exist_ok=True)
         log_f = open(args.log_jsonl, "w", encoding="utf-8")
+    stop_early = False
     for epoch in range(1, args.epochs + 1):
         policy.train()
         running = 0.0
         for chosen_ids, chosen_mask, rejected_ids, rejected_mask in tqdm(train_loader, desc=f"DPO epoch {epoch}/{args.epochs}"):
+            if args.max_train_seconds and (time.time() - start) >= args.max_train_seconds:
+                stop_early = True
+                break
             global_step += 1
             chosen_ids = chosen_ids.to(device)
             chosen_mask = chosen_mask.to(device)
@@ -141,11 +147,16 @@ def main() -> None:
                     }
                     log_f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-        acc = eval_pref_acc(policy, ref, val_loader, device)
-        print(f"[dpo] epoch={epoch} val_pref_acc={acc:.3f}")
-        if log_f is not None:
-            row = {"stage": "dpo", "step": global_step, "epoch": epoch, "val_pref_acc": acc, "time": time.time()}
-            log_f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        if epoch % max(1, args.eval_every) == 0 or stop_early or epoch == args.epochs:
+            acc = eval_pref_acc(policy, ref, val_loader, device)
+            print(f"[dpo] epoch={epoch} val_pref_acc={acc:.3f}")
+            if log_f is not None:
+                row = {"stage": "dpo", "step": global_step, "epoch": epoch, "val_pref_acc": acc, "time": time.time()}
+                log_f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+        if stop_early:
+            print(f"[dpo] Reached max_train_seconds={args.max_train_seconds}, stopping early at epoch={epoch}.")
+            break
 
     out_checkpoint = Path(args.out_checkpoint)
     out_checkpoint.parent.mkdir(parents=True, exist_ok=True)

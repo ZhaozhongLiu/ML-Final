@@ -73,6 +73,8 @@ def parse_args():
                         help="Print loss every N batches. Default=100.")
     parser.add_argument("--sample_interval_seconds", type=int, default=30,
                         help="Generate sample text every N seconds. Default=30.")
+    parser.add_argument("--max_train_seconds", type=int, default=None,
+                        help="Optional wall-time limit (seconds) per model training run. If set, stop training when exceeded.")
     parser.add_argument("--val_split", type=float, default=0.1,
                         help="Fraction of data reserved for validation. Default=0.1.")
     parser.add_argument("--test_split", type=float, default=0.0,
@@ -759,6 +761,7 @@ def train_one_model(model,
                     log_steps=100,
                     sample_interval=30,
                     max_steps_per_epoch=None,
+                    max_train_seconds=None,
                     enc=None,
                     monosemantic_info=None,
                     prompt="Once upon a",
@@ -776,6 +779,7 @@ def train_one_model(model,
     global_step = 0
     overfit_history = [] if overfit_options is not None else None
 
+    stop_training = False
     for epoch in range(1, epochs + 1):
         # One full pass over loader / 开始新一轮epoch
         model.train()
@@ -785,6 +789,10 @@ def train_one_model(model,
 
         step_in_epoch = 0
         for batch_idx, batch_tokens in enumerate(loader, start=1):
+            if max_train_seconds is not None and (time.time() - start_time) >= max_train_seconds:
+                print(f"[{model_name}] Reached max_train_seconds={max_train_seconds}, stopping training.")
+                stop_training = True
+                break
             # Move batch to device & run forward/backward / 将批次送入设备并完成一次更新
             step_in_epoch += 1
             global_step += 1
@@ -850,6 +858,9 @@ def train_one_model(model,
             if max_steps_per_epoch is not None and step_in_epoch >= max_steps_per_epoch:
                 print(f"[{model_name}] Reached max_steps_per_epoch={max_steps_per_epoch}, ending epoch {epoch} early.")
                 break
+
+        if stop_training:
+            break
 
         avg_loss = total_loss / step_in_epoch
         val_loss = None
@@ -1204,6 +1215,7 @@ def main():
             log_steps=log_interval_steps,
             sample_interval=sample_interval_seconds,
             max_steps_per_epoch=max_steps_per_epoch,
+            max_train_seconds=args.max_train_seconds,
             enc=enc,
             prompt=args.prompt,  # <--- Pass the user-specified prompt here
             val_loader=val_loader,

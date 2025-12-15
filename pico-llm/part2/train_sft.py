@@ -34,6 +34,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lr", type=float, default=5e-5)
     p.add_argument("--max_tokens", type=int, default=256)
     p.add_argument("--log_every", type=int, default=50)
+    p.add_argument("--eval_every", type=int, default=1, help="Run val evaluation every N epochs.")
+    p.add_argument("--max_train_seconds", type=int, default=0, help="0 = unlimited. Stops training after this wall time.")
     return p.parse_args()
 
 
@@ -107,10 +109,14 @@ def main() -> None:
     if args.log_jsonl:
         Path(args.log_jsonl).parent.mkdir(parents=True, exist_ok=True)
         log_f = open(args.log_jsonl, "w", encoding="utf-8")
+    stop_early = False
     for epoch in range(1, args.epochs + 1):
         model.train()
         running = 0.0
         for input_ids, loss_mask in tqdm(train_loader, desc=f"SFT epoch {epoch}/{args.epochs}"):
+            if args.max_train_seconds and (time.time() - start) >= args.max_train_seconds:
+                stop_early = True
+                break
             global_step += 1
             input_ids = input_ids.to(device)
             loss_mask = loss_mask.to(device)
@@ -131,14 +137,19 @@ def main() -> None:
                         row.update({"monitor_chosen_logp": c, "monitor_rejected_logp": r})
                     log_f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-        v = eval_loss(model, val_loader, device)
-        print(f"[sft] epoch={epoch} val_loss={v:.4f}")
-        if log_f is not None:
-            row = {"stage": "sft", "step": global_step, "epoch": epoch, "val_loss": v, "time": time.time()}
-            if dpo_monitor_loader is not None:
-                c, r = eval_dpo_logps(model, dpo_monitor_loader, device)
-                row.update({"monitor_chosen_logp": c, "monitor_rejected_logp": r})
-            log_f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        if epoch % max(1, args.eval_every) == 0 or stop_early or epoch == args.epochs:
+            v = eval_loss(model, val_loader, device)
+            print(f"[sft] epoch={epoch} val_loss={v:.4f}")
+            if log_f is not None:
+                row = {"stage": "sft", "step": global_step, "epoch": epoch, "val_loss": v, "time": time.time()}
+                if dpo_monitor_loader is not None:
+                    c, r = eval_dpo_logps(model, dpo_monitor_loader, device)
+                    row.update({"monitor_chosen_logp": c, "monitor_rejected_logp": r})
+                log_f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+        if stop_early:
+            print(f"[sft] Reached max_train_seconds={args.max_train_seconds}, stopping early at epoch={epoch}.")
+            break
 
     out_checkpoint = Path(args.out_checkpoint)
     out_checkpoint.parent.mkdir(parents=True, exist_ok=True)
