@@ -16,6 +16,8 @@ Files:
   - `DEEPSEEK_API_KEY` must be set
 - If using OpenAI ChatGPT API for dataset generation:
   - `OPENAI_API_KEY` must be set
+- If TinyStories download from HuggingFace is blocked on your VM:
+  - set `HF_ENDPOINT_TINY=https://hf-mirror.com`
 
 ---
 
@@ -128,6 +130,10 @@ BASE_CKPT_OVERRIDE=/path/to/transformer_final.pt DEVICE=cuda:0 bash pico-llm/par
 ### Pretrain data (TinyStories-only by default)
 - `PRETRAIN_SUBSET_SIZE` (default `50000`)
 - `PRETRAIN_MAX_STEPS` (default `2000` per epoch cap)
+
+### HuggingFace access (TinyStories)
+- `HF_ENDPOINT_TINY` (optional; e.g. `https://hf-mirror.com` for regions where huggingface.co is blocked)
+- `HF_ENDPOINT_FALLBACK` (default `https://hf-mirror.com`)
 
 ---
 

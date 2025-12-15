@@ -37,6 +37,12 @@ LLM_BATCH_SIZE="${LLM_BATCH_SIZE:-4}"             # >=1; batch multiple specs pe
 # OpenAI ChatGPT provider (optional)
 OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
 
+# HuggingFace access (TinyStories pretrain)
+# If huggingface.co is blocked (common in some regions), set HF_ENDPOINT_TINY to a mirror like https://hf-mirror.com
+HF_ENDPOINT_TINY="${HF_ENDPOINT_TINY:-}"
+HF_ENDPOINT_FALLBACK="${HF_ENDPOINT_FALLBACK:-https://hf-mirror.com}"
+HF_HUB_DISABLE_TELEMETRY="${HF_HUB_DISABLE_TELEMETRY:-1}"
+
 TS="$(date +"%Y%m%d-%H%M%S")"
 RUN_DIR="${PART2_DIR}/runs/${TS}"
 DATA_DIR="${RUN_DIR}/data"
@@ -123,27 +129,55 @@ if [[ -n "${BASE_CKPT_OVERRIDE}" ]]; then
   echo "[part2] using BASE_CKPT_OVERRIDE=${BASE_CKPT_OVERRIDE}"
   cp -f "${BASE_CKPT_OVERRIDE}" "${CKPT_DIR}/transformer_final.pt"
 else
-  "${PY}" "${ROOT_DIR}/pico-llm/pico-llm.py" \
-    --models transformer \
-    --device_id "${DEVICE}" \
-    --num_epochs 9999 \
-    --max_train_seconds "${PRETRAIN_MAX_SECONDS}" \
-    --batch_size 16 \
-    --learning_rate 3e-4 \
-    --train_subset_size "${PRETRAIN_SUBSET_SIZE}" \
-    --block_size 512 \
-    --transformer_d_model 256 \
-    --transformer_num_heads 8 \
-    --transformer_num_layers 4 \
-    --transformer_mlp_ratio 4.0 \
-    --transformer_dropout 0.1 \
-    --max_steps_per_epoch "${PRETRAIN_MAX_STEPS}" \
-    --val_split 0.0 \
-    --log_interval_steps 200 \
-    --sample_interval_seconds 600 \
-    --tinystories_weight 1.0 \
-    --checkpoint_dir "${CKPT_DIR}" \
-    --prompt "Once upon a"
+  pretrain_cmd() {
+    local hf_endpoint="${1:-}"
+    if [[ -n "${hf_endpoint}" ]]; then
+      echo "[part2] pretrain using HF_ENDPOINT=${hf_endpoint}"
+    fi
+    HF_ENDPOINT="${hf_endpoint}" HF_HUB_DISABLE_TELEMETRY="${HF_HUB_DISABLE_TELEMETRY}" \
+      "${PY}" "${ROOT_DIR}/pico-llm/pico-llm.py" \
+        --models transformer \
+        --device_id "${DEVICE}" \
+        --num_epochs 9999 \
+        --max_train_seconds "${PRETRAIN_MAX_SECONDS}" \
+        --batch_size 16 \
+        --learning_rate 3e-4 \
+        --train_subset_size "${PRETRAIN_SUBSET_SIZE}" \
+        --block_size 512 \
+        --transformer_d_model 256 \
+        --transformer_num_heads 8 \
+        --transformer_num_layers 4 \
+        --transformer_mlp_ratio 4.0 \
+        --transformer_dropout 0.1 \
+        --max_steps_per_epoch "${PRETRAIN_MAX_STEPS}" \
+        --val_split 0.0 \
+        --log_interval_steps 200 \
+        --sample_interval_seconds 600 \
+        --tinystories_weight 1.0 \
+        --checkpoint_dir "${CKPT_DIR}" \
+        --prompt "Once upon a"
+  }
+
+  set +e
+  if [[ -n "${HF_ENDPOINT_TINY}" ]]; then
+    pretrain_cmd "${HF_ENDPOINT_TINY}"
+    PRETRAIN_RC=$?
+  else
+    pretrain_cmd ""
+    PRETRAIN_RC=$?
+    if [[ "${PRETRAIN_RC}" -ne 0 ]]; then
+      echo "[part2] WARN: pretrain failed; retrying with HF mirror: ${HF_ENDPOINT_FALLBACK}"
+      pretrain_cmd "${HF_ENDPOINT_FALLBACK}"
+      PRETRAIN_RC=$?
+    fi
+  fi
+  set -e
+
+  if [[ "${PRETRAIN_RC}" -ne 0 ]]; then
+    echo "[part2] ERROR: pretrain failed after retries (rc=${PRETRAIN_RC})."
+    echo "[part2] Tip: set HF_ENDPOINT_TINY=${HF_ENDPOINT_FALLBACK} or provide BASE_CKPT_OVERRIDE to skip pretrain."
+    exit "${PRETRAIN_RC}"
+  fi
 fi
 
 BASE_CKPT="${CKPT_DIR}/transformer_final.pt"
