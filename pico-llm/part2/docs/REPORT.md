@@ -6,6 +6,25 @@
 
 > 注：本报告只覆盖 **SFT / DPO / Metrics** 流水线；不包含任何 interpretability / 可解释性相关内容。
 
+## 快速入口：把 run 结果整理成一份“可做 poster 的文件夹”
+
+当 `pico-llm/part2/run_all.sh` 跑完后，你会在 `pico-llm/part2/runs/<RUN_TAG>/` 看到 checkpoints、曲线图、metrics 等文件。  
+为了方便做 final project poster，我新增了一个“打包脚本”，会把关键图表 + 指标 + 示例生成整理到：
+
+- `pico-llm/part2/part2_results/<RUN_TAG>/`
+
+另外，最新的 `run_all.sh` 默认会在跑完后**自动执行打包**（可用 `BUNDLE_AFTER_RUN=0` 关闭）。
+
+使用方法（从 repo root）：
+
+```bash
+PYTHONPATH=pico-llm python3 -m part2.make_part2_bundle --run_tag <RUN_TAG>
+```
+
+整理包里推荐先看：
+- `pico-llm/part2/part2_results/<RUN_TAG>/INDEX_ZH_EN.md`
+- `pico-llm/part2/part2_results/<RUN_TAG>/REPORT_ZH_EN.md`
+
 ---
 
 ## 1. 改动前：项目原始状态（你拿到时能做什么）

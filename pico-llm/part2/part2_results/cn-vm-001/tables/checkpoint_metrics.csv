@@ -1,0 +1,4 @@
+checkpoint,sft_test_loss,dpo_test_pref_acc,mean_horror_lexicon,n_samples
+transformer_sft,0.28576443158090115,1.0,2.328109784158473,6
+transformer_dpo,0.14357718359678984,1.0,2.438991864032038,6
+transformer_final,7.4535083174705505,0.40625,1.4951587473074632,6

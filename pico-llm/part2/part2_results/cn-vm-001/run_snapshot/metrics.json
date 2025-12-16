@@ -1,0 +1,53 @@
+{
+  "checkpoint": "/root/ML-Final/pico-llm/part2/runs/cn-vm-001/checkpoints/transformer_dpo.pt",
+  "sft_test_loss": 0.14357812143862247,
+  "dpo_test_pref_acc": 1.0,
+  "generated_at": 1765819524.3685536,
+  "samples": [
+    {
+      "id": "sft-000041",
+      "prompt": "You are a creative writing assistant.\nWrite a short horror story that follows this story specification.\n\nTitle: The Mirror in the Attic\nSetting: a school after everyone has gone home\nProtagonist: Mina\nSupporting character: Sora\nImportant object: a child's drawing\nTaboo rule: never say the missing person's name out loud\nTwist: the secondary character has been repeating the same day\n\nConstraints:\n- 2 to 4 paragraphs.\n- Keep it suspenseful and eerie, not graphic.\n- End with an unsettling implication.\n\nStory:\n",
+      "generation": "You are a creative writing assistant.\nWrite a short horror story that follows this story specification.\n\nTitle: The Mirror in the Attic\nSetting: a school after everyone has gone home\nProtagonist: Mina\nSupporting character: Sora\nImportant object: a child's drawing\nTaboo rule: never say the missing person's name out loud\nTwist: the secondary character has been repeating the same day\n\nConstraints:\n- 2 to 4 paragraphs.\n- Keep it suspenseful and eerie, not graphic.\n- End with an unsettling implication.\n\nStory:\nMina only meant to help Sora, but the rule was clear: never say the missing person's name out loud.\n\n bus stop at midnight, Mina found a child's drawing and wished they hadn't.\n\nSomewhere nearby, a soft scraping answered every silence, like a patient listener practicing a name. The air felt thinner each time a child's drawing changed hands, as if it was counting something no one could see. Then it happened: the secondary character has been repeating the same day.\n\nIn the mirror-dark, Mina saw Sora behind them—except Sora was still speaking from the other side of the door.<|endoftext|> insisted it was still speaking from the other side of the door.<|endoftext|> heard a knock from inside the room, slow and grateful.<|endoftext|>",
+      "horror_lexicon": {
+        "hits": 7.0,
+        "per_100_words": 3.4653465346534658
+      }
+    },
+    {
+      "id": "sft-000046",
+      "prompt": "You are a creative writing assistant.\nWrite a short horror story that follows this story specification.\n\nTitle: The Last Candle\nSetting: a rural bus stop at midnight\nProtagonist: Iris\nSupporting character: Theo\nImportant object: a child's drawing\nTaboo rule: never say the missing person's name out loud\nTwist: the protagonist has been the missing person all along\n\nConstraints:\n- 2 to 4 paragraphs.\n- Keep it suspenseful and eerie, not graphic.\n- End with an unsettling implication.\n\nStory:\n",
+      "generation": "You are a creative writing assistant.\nWrite a short horror story that follows this story specification.\n\nTitle: The Last Candle\nSetting: a rural bus stop at midnight\nProtagonist: Iris\nSupporting character: Theo\nImportant object: a child's drawing\nTaboo rule: never say the missing person's name out loud\nTwist: the protagonist has been the missing person all along\n\nConstraints:\n- 2 to 4 paragraphs.\n- Keep it suspenseful and eerie, not graphic.\n- End with an unsettling implication.\n\nStory:\nIn a rural bus stop at midnight, Iris found a child's drawing and wished they hadn't.\n\nThe air felt thinner each time a child's drawing changed hands, as if it was counting something no one could see. Somewhere nearby, a soft scraping answered every silence, like a patient listener practicing a name. Only when the lights failed did the truth land—the protagonist has been the missing person all along.\n\nWhen Iris tried to leave, the hallway stretched and the a child's drawing grew warm in their pocket, as if it had finally found its owner.<|endoftext|> wrapped in the last candle and heard a knock from inside the room, slow and grateful.<|endoftext|> blew out the last candle and heard a knock from inside the room, slow and grateful.<|endoftext|> blew out the last candle",
+      "horror_lexicon": {
+        "hits": 3.0,
+        "per_100_words": 1.4285714285714286
+      }
+    },
+    {
+      "id": "sft-000229",
+      "prompt": "You are a creative writing assistant.\nWrite a short horror story that follows this story specification.\n\nTitle: Borrowed Footsteps\nSetting: a mountain motel with a broken sign\nProtagonist: Sora\nSupporting character: Kai\nImportant object: a cracked phone\nTaboo rule: never answer knocks after 2 a.m.\nTwist: the protagonist realizes the sound is coming from inside the walls\n\nConstraints:\n- 2 to 4 paragraphs.\n- Keep it suspenseful and eerie, not graphic.\n- End with an unsettling implication.\n\nStory:\n",
+      "generation": "You are a creative writing assistant.\nWrite a short horror story that follows this story specification.\n\nTitle: Borrowed Footsteps\nSetting: a mountain motel with a broken sign\nProtagonist: Sora\nSupporting character: Kai\nImportant object: a cracked phone\nTaboo rule: never answer knocks after 2 a.m.\nTwist: the protagonist realizes the sound is coming from inside the walls\n\nConstraints:\n- 2 to 4 paragraphs.\n- Keep it suspenseful and eerie, not graphic.\n- End with an unsettling implication.\n\nStory:\nSora learned the never answer knocks after 2 a.m. the hard way, in a mountain motel found a cracked phone and wished they hadn't.\n\nThe air felt thinner each time a cracked phone changed hands, as if it was counting something no one could see. Somewhere nearby, a soft scraping answered every silence, like a patient listener practicing a name. Then it happened: the protagonist realizes the sound is coming from inside the walls.\n\nWhen Sora tried to leave, the hallway stretched and the a cracked phone grew warm in their pocket, as if it had finally found its owner.<|endoftext|> blew out the last candle and heard a knock from inside the room, slow and grateful.<|endoftext|> blew out the last candle and heard a knock from inside the room, slow and grateful.<|endoftext|>",
+      "horror_lexicon": {
+        "hits": 8.0,
+        "per_100_words": 3.8095238095238098
+      }
+    },
+    {
+      "id": "sft-000278",
+      "prompt": "You are a creative writing assistant.\nWrite a short horror story that follows this story specification.\n\nTitle: A Quiet Room\nSetting: a mountain motel with a broken sign\nProtagonist: Iris\nSupporting character: Nina\nImportant object: a paper map\nTaboo rule: never follow footsteps you can't see\nTwist: the secondary character has been repeating the same day\n\nConstraints:\n- 2 to 4 paragraphs.\n- Keep it suspenseful and eerie, not graphic.\n- End with an unsettling implication.\n\nStory:\n",
+      "generation": "You are a creative writing assistant.\nWrite a short horror story that follows this story specification.\n\nTitle: A Quiet Room\nSetting: a mountain motel with a broken sign\nProtagonist: Iris\nSupporting character: Nina\nImportant object: a paper map\nTaboo rule: never follow footsteps you can't see\nTwist: the secondary character has been repeating the same day\n\nConstraints:\n- 2 to 4 paragraphs.\n- Keep it suspenseful and eerie, not graphic.\n- End with an unsettling implication.\n\nStory:\nIris only meant to help Nina, but the rule was clear: never follow footsteps you can't see.\n\nSomewhere nearby, a soft scraping answered every silence, like a patient listener practicing a name. The air felt thinner each time a paper map changed hands, as if it was counting something no one could see. Then it happened: the secondary character has been repeating the same day.\n\nIn the mirror-dark, Iris saw Nina behind them—except Nina was still speaking from the other side of the door.<|endoftext|> the secondary character has been repeating the same day.<|endoftext|> heard a knock from inside the room, slow and grateful.<|endoftext|> blew out the last candle and heard a knock from inside the room, slow and grateful.<|endoftext|> blew out the last candle and heard a",
+      "horror_lexicon": {
+        "hits": 8.0,
+        "per_100_words": 3.9215686274509802
+      }
+    },
+    {
+      "id": "sft-000072",
+      "prompt": "You are a creative writing assistant.\nWrite a short horror story that follows this story specification.\n\nTitle: The Mirror in the Attic\nSetting: a subway platform that feels too long\nProtagonist: Theo\nSupporting character: Sora\nImportant object: a child's drawing\nTaboo rule: never play the tape past the final click\nTwist: the secondary character has been repeating the same day\n\nConstraints:\n- 2 to 4 paragraphs.\n- Keep it suspenseful and eerie, not graphic.\n- End with an unsettling implication.\n\nStory:\n",
+      "generation": "You are a creative writing assistant.\nWrite a short horror story that follows this story specification.\n\nTitle: The Mirror in the Attic\nSetting: a subway platform that feels too long\nProtagonist: Theo\nSupporting character: Sora\nImportant object: a child's drawing\nTaboo rule: never play the tape past the final click\nTwist: the secondary character has been repeating the same day\n\nConstraints:\n- 2 to 4 paragraphs.\n- Keep it suspenseful and eerie, not graphic.\n- End with an unsettling implication.\n\nStory:\nTheo learned the never play the tape past the final click the hard way, in a subway platform that feels too long.\n\nSomewhere nearby, a soft scraping answered every silence, like a patient listener practicing a name. The air felt thinner each time a child's drawing changed hands, as if it was counting something no one could see. At last, Theo understood: the secondary character has been repeating the same day.\n\nWhen Theo tried to leave, the hallway stretched and the a child's drawing grew warm in their pocket, as if it had finally found its owner.<|endoftext|> door closed the door open the door.<|endoftext|> heard a knock from inside the room, slow and grateful.<|endoftext|> blew out the last candle and heard a knock from inside the room, slow and grateful.",
+      "horror_lexicon": {
+        "hits": 7.0,
+        "per_100_words": 3.3175355450236967
+      }
+    }
+  ]
+}

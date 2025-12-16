@@ -82,4 +82,3 @@ flowchart TD
     DPOTRAIN --> EVAL["evaluate.py\nMetrics:\n- sft_test_loss\n- dpo_test_pref_acc\n- sample generations + horror lexicon\nOutput: metrics.json"]
     DPOTRAIN --> PLOT["plot_curves.py\nPlot:\n- SFT monitor (chosen vs rejected logprob)\n- DPO rewards (chosen vs rejected)\nOutput: curves.png"]
   end
-

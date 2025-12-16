@@ -35,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max_tokens", type=int, default=256)
     p.add_argument("--log_every", type=int, default=50)
     p.add_argument("--eval_every", type=int, default=1, help="Run val evaluation every N epochs.")
+    p.add_argument("--max_steps", type=int, default=0, help="0 = unlimited. Stops after this many optimizer steps.")
     p.add_argument("--max_train_seconds", type=int, default=0, help="0 = unlimited. Stops training after this wall time.")
     p.add_argument("--progress_interval_seconds", type=int, default=60, help="Print progress about every N seconds.")
     return p.parse_args()
@@ -119,6 +120,9 @@ def main() -> None:
             if args.max_train_seconds and (time.time() - start) >= args.max_train_seconds:
                 stop_early = True
                 break
+            if args.max_steps and global_step >= args.max_steps:
+                stop_early = True
+                break
             global_step += 1
             input_ids = input_ids.to(device)
             loss_mask = loss_mask.to(device)
@@ -155,7 +159,13 @@ def main() -> None:
                 log_f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
         if stop_early:
-            print(f"[sft] Reached max_train_seconds={args.max_train_seconds}, stopping early at epoch={epoch}.")
+            reason = []
+            if args.max_train_seconds:
+                reason.append(f"max_train_seconds={args.max_train_seconds}")
+            if args.max_steps:
+                reason.append(f"max_steps={args.max_steps}")
+            why = ", ".join(reason) if reason else "limit"
+            print(f"[sft] Reached {why}, stopping early at epoch={epoch}.")
             break
 
     out_checkpoint = Path(args.out_checkpoint)

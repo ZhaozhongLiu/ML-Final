@@ -37,6 +37,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--sft_log_jsonl", type=str, required=True)
     p.add_argument("--dpo_log_jsonl", type=str, required=True)
     p.add_argument("--out_png", type=str, required=True)
+    p.add_argument(
+        "--max_step",
+        type=int,
+        default=0,
+        help="0 = no limit. If >0, only plot rows with step <= max_step (useful to show early training).",
+    )
     return p.parse_args()
 
 
@@ -44,6 +50,9 @@ def main() -> None:
     args = parse_args()
     sft_rows = read_jsonl(args.sft_log_jsonl)
     dpo_rows = read_jsonl(args.dpo_log_jsonl)
+    if args.max_step and args.max_step > 0:
+        sft_rows = [r for r in sft_rows if int(r.get("step", 0)) <= args.max_step]
+        dpo_rows = [r for r in dpo_rows if int(r.get("step", 0)) <= args.max_step]
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4), dpi=150)
 
@@ -84,4 +93,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
