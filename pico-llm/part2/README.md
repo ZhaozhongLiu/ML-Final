@@ -2,6 +2,11 @@
 
 This folder adds an end-to-end **SFT → DPO → metrics** pipeline on top of `pico-llm.py`.
 
+## Docs & diagrams
+- Report: `pico-llm/part2/docs/REPORT.md`
+- Runbook: `pico-llm/part2/docs/RUN_ALL_USAGE.md`
+- Diagrams: `pico-llm/part2/docs/diagrams/`
+
 ## What this implements
 - **SFT**: prompt is a *story specification* (not a story beginning), response is a full short story.
 - **DPO**: for the same prompt, prefer `chosen` (darker / more horror) over `rejected` (wholesome / happy).
@@ -18,6 +23,13 @@ bash pico-llm/part2/run_all.sh
 ```
 
 Artifacts are written under `pico-llm/part2/runs/<timestamp>/`.
+
+## Poster/report bundle (recommended for final project)
+After a run finishes, package the key figures + metrics + samples into a clean folder:
+```bash
+PYTHONPATH=pico-llm python3 -m part2.make_part2_bundle --run_tag <RUN_TAG>
+```
+Outputs are written to `pico-llm/part2/part2_results/<RUN_TAG>/` (start from `INDEX_ZH_EN.md`).
 
 ## Using DeepSeek API for dataset generation (default)
 Set `DEEPSEEK_API_KEY` and use `DATA_PROVIDER=deepseek` (this is the default in `run_all.sh`):

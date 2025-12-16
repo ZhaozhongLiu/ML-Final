@@ -6,6 +6,25 @@
 
 > 注：本报告只覆盖 **SFT / DPO / Metrics** 流水线；不包含任何 interpretability / 可解释性相关内容。
 
+## 快速入口：把 run 结果整理成一份“可做 poster 的文件夹”
+
+当 `pico-llm/part2/run_all.sh` 跑完后，你会在 `pico-llm/part2/runs/<RUN_TAG>/` 看到 checkpoints、曲线图、metrics 等文件。  
+为了方便做 final project poster，我新增了一个“打包脚本”，会把关键图表 + 指标 + 示例生成整理到：
+
+- `pico-llm/part2/part2_results/<RUN_TAG>/`
+
+另外，最新的 `run_all.sh` 默认会在跑完后**自动执行打包**（可用 `BUNDLE_AFTER_RUN=0` 关闭）。
+
+使用方法（从 repo root）：
+
+```bash
+PYTHONPATH=pico-llm python3 -m part2.make_part2_bundle --run_tag <RUN_TAG>
+```
+
+整理包里推荐先看：
+- `pico-llm/part2/part2_results/<RUN_TAG>/INDEX_ZH_EN.md`
+- `pico-llm/part2/part2_results/<RUN_TAG>/REPORT_ZH_EN.md`
+
 ---
 
 ## 1. 改动前：项目原始状态（你拿到时能做什么）
@@ -605,6 +624,63 @@ tail -f pico-llm/part2/runs/cn-vm-001/output.log
 例如：
 ```bash
 ls -la pico-llm/part2/runs/cn-vm-001/
+```
+
+---
+
+## 6.2 现在怎么“玩一玩”你的 LLM（用 checkpoint 生成故事）
+
+你的模型不是“聊天机器人”式的严格对话协议，它本质是一个 **自回归语言模型**：给它一段 prompt，它会继续往后生成。
+
+下面给你两种最常用的玩法：一次性生成（one-shot）和交互式 REPL。
+
+### 6.2.1 找到你要用的 checkpoint
+
+如果你跑的是 `RUN_TAG=cn-vm-001`，通常用 DPO 后的 checkpoint：
+- `pico-llm/part2/runs/cn-vm-001/checkpoints/transformer_dpo.pt`
+
+你也可以试试：
+- `pico-llm/part2/runs/cn-vm-001/checkpoints/transformer_sft.pt`
+- `pico-llm/part2/runs/cn-vm-001/checkpoints/transformer_final.pt`
+
+### 6.2.2 One-shot：给一个 story spec，让模型写故事
+
+用新增脚本 `part2.play_model`：
+
+```bash
+PYTHONPATH=pico-llm python3 -m part2.play_model \
+  --checkpoint pico-llm/part2/runs/cn-vm-001/checkpoints/transformer_dpo.pt \
+  --device cuda:0 \
+  --mode oneshot \
+  --top_p 0.95 \
+  --max_new_tokens 220 \
+  --prompt "You are a creative writing assistant.\nWrite a short horror story that follows this story specification.\n\nTitle: The Door That Wasn't There\nSetting: an old apartment building during a winter blackout\nProtagonist: Mina\nSupporting character: Kai\nImportant object: a brass key\nTaboo rule: never answer knocks after 2 a.m.\nTwist: the sound is coming from inside the walls\n\nConstraints:\n- 2 to 4 paragraphs.\n- Keep it suspenseful and eerie, not graphic.\n- End with an unsettling implication.\n\nStory:\n"
+```
+
+参数怎么调：
+- `--top_p <= 0`：贪心（更稳定但更重复）
+- `--top_p 0.9~0.97`：更有创造力
+- `--max_new_tokens`：生成长度
+
+### 6.2.3 REPL：交互式反复试 prompt
+
+```bash
+PYTHONPATH=pico-llm python3 -m part2.play_model \
+  --checkpoint pico-llm/part2/runs/cn-vm-001/checkpoints/transformer_dpo.pt \
+  --device cuda:0 \
+  --mode repl \
+  --top_p 0.95 \
+  --max_new_tokens 220
+```
+
+输入提示词后回车即可生成；输入 `/exit` 退出。
+
+### 6.2.4 如果你没有 GPU（或想用 CPU）
+
+把 `--device cpu` 即可：
+
+```bash
+PYTHONPATH=pico-llm python3 -m part2.play_model --checkpoint ... --device cpu
 ```
 
 ## 7. 后续你最可能要改的地方（把“模板生成”换成“用大模型生成”）

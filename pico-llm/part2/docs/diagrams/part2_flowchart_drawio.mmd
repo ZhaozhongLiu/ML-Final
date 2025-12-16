@@ -1,0 +1,49 @@
+flowchart TD
+  A[Start run_all.sh] --> B[Create runs/RUN_TAG and output.log]
+  B --> C[Install part2 requirements]
+  C --> D[NETWORK_PROBE=1?]
+  D -->|Yes| D1[check_network to network_probe.json]
+  D -->|No| E
+  D1 --> E[make_datasets]
+
+  E --> F[DATA_PROVIDER choice]
+  F -->|deepseek| F1[DEEPSEEK_API_KEY + check_openai ok?]
+  F1 -->|No| FT[Fallback to template]
+  F1 -->|Yes| FD[Generate via DeepSeek]
+  F -->|chatgpt| F2[OPENAI_API_KEY + check_openai ok?]
+  F2 -->|No| FT
+  F2 -->|Yes| FO[Generate via OpenAI]
+  F -->|template| FT
+
+  FD --> G[Write SFT and DPO JSONL plus dataset_meta.json]
+  FO --> G
+  FT --> G
+
+  G --> H[BASE_CKPT_OVERRIDE set?]
+  H -->|Yes| H1[Copy to transformer_final.pt]
+  H -->|No| I[Pretrain on TinyStories subset]
+  I --> I1[HF official reachable?]
+  I1 -->|No| I2[Use HF mirror endpoint]
+  I1 -->|Yes| I3[Use official or selected endpoint]
+  I2 --> I3
+  I3 --> I4[Pretrain success?]
+  I4 -->|No| X[Exit pretrain failed]
+  I4 -->|Yes| J[transformer_final.pt]
+  H1 --> J
+
+  J --> K[SFT train+val JSONL present?]
+  K -->|Yes| K1[train_sft to transformer_sft.pt + logs_sft.jsonl]
+  K -->|No| K2[Skip SFT copy base to SFT]
+
+  K1 --> L[DPO train+val JSONL present?]
+  K2 --> L
+  L -->|Yes| L1[train_dpo to transformer_dpo.pt + logs_dpo.jsonl]
+  L -->|No| L2[Skip DPO copy SFT to DPO]
+
+  L1 --> M[evaluate to metrics.json + samples]
+  L2 --> M
+  M --> N[Both logs present?]
+  N -->|Yes| N1[plot_curves to curves.png]
+  N -->|No| O[Done]
+  N1 --> O[Done]
+  O --> P[Optional: make_part2_bundle to part2_results/RUN_TAG]

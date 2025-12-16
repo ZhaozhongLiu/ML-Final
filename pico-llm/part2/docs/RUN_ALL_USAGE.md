@@ -4,7 +4,9 @@ This is a practical runbook for running the full pipeline remotely (datasets →
 
 Files:
 - Entry point: `pico-llm/part2/run_all.sh`
-- Report: `pico-llm/part2/REPORT.md`
+- Report: `pico-llm/part2/docs/REPORT.md`
+- Runbook: `pico-llm/part2/docs/RUN_ALL_USAGE.md`
+- Diagrams: `pico-llm/part2/docs/diagrams/`
 
 ---
 
@@ -117,6 +119,18 @@ If the API fails:
 - `PRETRAIN_MAX_SECONDS=14400` (4h)
 - `SFT_MAX_SECONDS=1800` (30m)
 - `DPO_MAX_SECONDS=1800` (30m)
+
+To avoid extreme overfitting on small synthetic datasets, `run_all.sh` also uses modest default epoch counts:
+- `SFT_EPOCHS=20`
+- `DPO_EPOCHS=10`
+
+Additionally, SFT/DPO have explicit step caps (safer on small datasets + fast GPUs):
+- `SFT_MAX_STEPS=800`
+- `DPO_MAX_STEPS=400`
+
+After the run completes, `run_all.sh` also bundles key figures/metrics/samples into:
+- `pico-llm/part2/part2_results/<RUN_TAG>/`
+You can disable this with `BUNDLE_AFTER_RUN=0`.
 
 To change the split:
 ```bash

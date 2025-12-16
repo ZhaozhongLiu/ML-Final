@@ -16,8 +16,12 @@ PRETRAIN_MAX_SECONDS="${PRETRAIN_MAX_SECONDS:-14400}"   # 4 hours
 SFT_MAX_SECONDS="${SFT_MAX_SECONDS:-1800}"              # 30 minutes
 DPO_MAX_SECONDS="${DPO_MAX_SECONDS:-1800}"              # 30 minutes
 PROGRESS_INTERVAL_SECONDS="${PROGRESS_INTERVAL_SECONDS:-60}"
-SFT_EPOCHS="${SFT_EPOCHS:-9999}"
-DPO_EPOCHS="${DPO_EPOCHS:-9999}"
+# Default epochs are intentionally modest to avoid extreme overfitting on small synthetic datasets.
+# Wall-time caps still apply as a safety net.
+SFT_EPOCHS="${SFT_EPOCHS:-20}"
+DPO_EPOCHS="${DPO_EPOCHS:-10}"
+SFT_MAX_STEPS="${SFT_MAX_STEPS:-800}"
+DPO_MAX_STEPS="${DPO_MAX_STEPS:-400}"
 BASE_CKPT_OVERRIDE="${BASE_CKPT_OVERRIDE:-}"
 DATA_PROVIDER="${DATA_PROVIDER:-deepseek}"   # template | deepseek | chatgpt
 
@@ -45,6 +49,11 @@ HF_ENDPOINT_FALLBACK="${HF_ENDPOINT_FALLBACK:-https://hf-mirror.com}"
 HF_HUB_DISABLE_TELEMETRY="${HF_HUB_DISABLE_TELEMETRY:-1}"
 NETWORK_PROBE="${NETWORK_PROBE:-1}"
 NETWORK_PROBE_TIMEOUT="${NETWORK_PROBE_TIMEOUT:-5}"
+
+# Auto-bundle results to pico-llm/part2/part2_results/<RUN_TAG>/ after the run
+BUNDLE_AFTER_RUN="${BUNDLE_AFTER_RUN:-1}"
+BUNDLE_SUFFIX="${BUNDLE_SUFFIX:-}"
+BUNDLE_CURVES_MAX_STEP="${BUNDLE_CURVES_MAX_STEP:-5000}"
 
 RUN_TAG="${RUN_TAG:-$(date +"%Y%m%d-%H%M%S")}"
 RUN_DIR="${PART2_DIR}/runs/${RUN_TAG}"
@@ -252,6 +261,7 @@ if [[ -s "${DATA_DIR}/sft_train.jsonl" && -s "${DATA_DIR}/sft_val.jsonl" ]]; the
     --out_checkpoint "${SFT_CKPT}" \
     --device "${DEVICE}" \
     --epochs "${SFT_EPOCHS}" \
+    --max_steps "${SFT_MAX_STEPS}" \
     --max_train_seconds "${SFT_MAX_SECONDS}" \
     --progress_interval_seconds "${PROGRESS_INTERVAL_SECONDS}" \
     --eval_every 5 \
@@ -275,6 +285,7 @@ if [[ -s "${DATA_DIR}/dpo_train.jsonl" && -s "${DATA_DIR}/dpo_val.jsonl" ]]; the
     --out_checkpoint "${DPO_CKPT}" \
     --device "${DEVICE}" \
     --epochs "${DPO_EPOCHS}" \
+    --max_steps "${DPO_MAX_STEPS}" \
     --max_train_seconds "${DPO_MAX_SECONDS}" \
     --progress_interval_seconds "${PROGRESS_INTERVAL_SECONDS}" \
     --eval_every 5 \
@@ -311,4 +322,22 @@ else
   echo "[part2] WARN: missing logs JSONL; skipping plot."
 fi
 
+if [[ "${BUNDLE_AFTER_RUN}" == "1" ]]; then
+  echo "[part2] bundle -> ${PART2_DIR}/part2_results/${RUN_TAG}${BUNDLE_SUFFIX}/"
+  PYTHONPATH="${ROOT_DIR}/pico-llm" "${PY}" -m part2.make_part2_bundle \
+    --run_dir "${RUN_DIR}" \
+    --bundle_suffix "${BUNDLE_SUFFIX}" \
+    --curves_max_step "${BUNDLE_CURVES_MAX_STEP}" \
+    --device "cpu" \
+    --force
+fi
+
 echo "[part2] done: ${RUN_DIR}"
+
+echo "[part2] key outputs:"
+echo "  - log: ${OUTPUT_LOG}"
+echo "  - metrics: ${METRICS_DIR}/metrics.json"
+echo "  - curves: ${PLOTS_DIR}/curves.png"
+if [[ "${BUNDLE_AFTER_RUN}" == "1" ]]; then
+  echo "  - bundle: ${PART2_DIR}/part2_results/${RUN_TAG}${BUNDLE_SUFFIX}/INDEX_ZH_EN.md"
+fi
