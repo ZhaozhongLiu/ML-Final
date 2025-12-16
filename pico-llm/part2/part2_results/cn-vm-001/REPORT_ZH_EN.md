@@ -11,30 +11,25 @@
 ## 2) Pipeline diagram / 流程图
 
 ```mermaid
-flowchart TD
-  A[Input text prompts] --> B[Tokenizer]
-  B --> C{Model Type}
+flowchart LR
+  A["Base LM<br/><br/>(pretrained on stories)"] --> B["SFT<br/><br/>spec → story imitation"]
+  B --> C["DPO<br/><br/>preference alignment"]
+  C --> D["Evaluation<br/><br/>loss + preference accuracy + samples"]
 
-  subgraph M[Language Model]
-    C --> T[Transformer LM]
-    C --> L[LSTM LM]
-    C --> K[k-gram MLP]
+  subgraph SFT["SFT (Supervised Fine-Tuning)"]
+    B1["Data<br/><br/>prompt/spec + target story"]
+    B2["Objective<br/><br/>masked next-token cross-entropy<br/>(loss only on response tokens)"]
+    B3["Outcome<br/><br/>instruction-following story generator"]
+    B1 --> B2 --> B3
   end
 
-  subgraph P[Part2 Training Pipeline]
-    D[TinyStories (pretrain corpus)] --> E[Pretrain base LM]
-    F[Teacher LLM (DeepSeek/OpenAI-compatible)] --> G[Dataset Generator]
-    G --> H[SFT dataset (prompt, answer)]
-    G --> I[DPO dataset (prompt, chosen, rejected)]
-    E --> J[SFT training]
-    J --> K[DPO training]
-    H --> J
-    I --> K
-    K --> Q[Final checkpoint]
+  subgraph DPO["DPO (Direct Preference Optimization)"]
+    C1["Data<br/><br/>prompt + (chosen, rejected)"]
+    C2["Compare preferences<br/><br/>policy log-ratio vs frozen reference log-ratio"]
+    C3["Objective<br/><br/>-log σ(β·Δ)<br/>(+ optional label smoothing)"]
+    C4["Effect<br/><br/>increase probability of chosen<br/>relative to rejected"]
+    C1 --> C2 --> C3 --> C4
   end
-
-  Q --> R[Evaluation & Plots]
-  Q --> S[Play / Inference CLI]
 ```
 
 ## 3) Data & teacher LLM / 数据与教师模型

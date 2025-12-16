@@ -661,13 +661,26 @@ ls -la pico-llm/part2/runs/cn-vm-001/
 用新增脚本 `part2.play_model`：
 
 ```bash
+## 推荐：在仓库根目录运行（这样 `PYTHONPATH=pico-llm` 才指向正确路径）
 PYTHONPATH=pico-llm python3 -m part2.play_model \
   --checkpoint pico-llm/part2/runs/cn-vm-001/checkpoints/transformer_dpo.pt \
   --device cuda:0 \
   --mode oneshot \
   --top_p 0.95 \
   --max_new_tokens 220 \
-  --prompt "You are a creative writing assistant.\nWrite a short horror story that follows this story specification.\n\nTitle: The Door That Wasn't There\nSetting: an old apartment building during a winter blackout\nProtagonist: Mina\nSupporting character: Kai\nImportant object: a brass key\nTaboo rule: never answer knocks after 2 a.m.\nTwist: the sound is coming from inside the walls\n\nConstraints:\n- 2 to 4 paragraphs.\n- Keep it suspenseful and eerie, not graphic.\n- End with an unsettling implication.\n\nStory:\n"
+  --prompt $'You are a creative writing assistant.\nWrite a short horror story that follows this story specification.\n\nTitle: The Door That Wasn\x27t There\nSetting: an old apartment building during a winter blackout\nProtagonist: Mina\nSupporting character: Kai\nImportant object: a brass key\nTaboo rule: never answer knocks after 2 a.m.\nTwist: the sound is coming from inside the walls\n\nConstraints:\n- 2 to 4 paragraphs.\n- Keep it suspenseful and eerie, not graphic.\n- End with an unsettling implication.\n\nStory:\n'
+```
+
+如果你当前就在 `pico-llm/part2/` 目录里运行（shell 提示符显示 `... part2 %`），用这个等价写法：
+
+```bash
+PYTHONPATH=.. python3 -m part2.play_model \
+  --checkpoint runs/cn-vm-001/checkpoints/transformer_dpo.pt \
+  --device cuda:0 \
+  --mode oneshot \
+  --top_p 0.95 \
+  --max_new_tokens 220 \
+  --prompt $'You are a creative writing assistant.\nWrite a short horror story that follows this story specification.\n\nTitle: The Door That Wasn\x27t There\nSetting: an old apartment building during a winter blackout\nProtagonist: Mina\nSupporting character: Kai\nImportant object: a brass key\nTaboo rule: never answer knocks after 2 a.m.\nTwist: the sound is coming from inside the walls\n\nConstraints:\n- 2 to 4 paragraphs.\n- Keep it suspenseful and eerie, not graphic.\n- End with an unsettling implication.\n\nStory:\n'
 ```
 
 参数怎么调：
@@ -678,8 +691,20 @@ PYTHONPATH=pico-llm python3 -m part2.play_model \
 ### 6.2.3 REPL：交互式反复试 prompt
 
 ```bash
+## 仓库根目录运行
 PYTHONPATH=pico-llm python3 -m part2.play_model \
   --checkpoint pico-llm/part2/runs/cn-vm-001/checkpoints/transformer_dpo.pt \
+  --device cuda:0 \
+  --mode repl \
+  --top_p 0.95 \
+  --max_new_tokens 220
+```
+
+或在 `pico-llm/part2/` 目录运行：
+
+```bash
+PYTHONPATH=.. python3 -m part2.play_model \
+  --checkpoint runs/cn-vm-001/checkpoints/transformer_dpo.pt \
   --device cuda:0 \
   --mode repl \
   --top_p 0.95 \

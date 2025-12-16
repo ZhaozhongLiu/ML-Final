@@ -28,6 +28,14 @@ def main() -> None:
 
     top_p = None if args.top_p is None or args.top_p <= 0 else float(args.top_p)
 
+    def _postprocess_generation(prompt: str, full_text: str) -> str:
+        text = full_text
+        if prompt and text.startswith(prompt):
+            text = text[len(prompt) :]
+        if "<|endoftext|>" in text:
+            text = text.split("<|endoftext|>", 1)[0]
+        return text.strip()
+
     if args.mode == "oneshot":
         if not args.prompt:
             raise SystemExit("--prompt is required in oneshot mode.")
@@ -39,7 +47,7 @@ def main() -> None:
             device=device,
             top_p=top_p,
         )
-        print(text)
+        print(_postprocess_generation(args.prompt, text))
         return
 
     # REPL mode
@@ -64,10 +72,9 @@ def main() -> None:
             top_p=top_p,
         )
         print("\n--- generation ---")
-        print(text)
+        print(_postprocess_generation(prompt, text))
         print("---------------\n")
 
 
 if __name__ == "__main__":
     main()
-
