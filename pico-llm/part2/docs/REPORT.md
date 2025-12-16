@@ -25,6 +25,19 @@ PYTHONPATH=pico-llm python3 -m part2.make_part2_bundle --run_tag <RUN_TAG>
 - `pico-llm/part2/part2_results/<RUN_TAG>/INDEX_ZH_EN.md`
 - `pico-llm/part2/part2_results/<RUN_TAG>/REPORT_ZH_EN.md`
 
+### 一键运行（推荐，适合 VM）
+
+```bash
+# GPU 跑一键流水线（默认 DeepSeek 生成数据；跑完自动打包到 part2_results/<RUN_TAG>/）
+DEEPSEEK_API_KEY=... DEVICE=cuda:0 RUN_TAG=my-run-001 bash pico-llm/part2/run_all.sh
+```
+
+默认防过拟合配置（可改动）：
+- `SFT_EPOCHS=20`、`DPO_EPOCHS=10`
+- `SFT_MAX_STEPS=800`、`DPO_MAX_STEPS=400`
+- 自动生成“前期放大”曲线：`BUNDLE_CURVES_MAX_STEP=5000`
+- 自动打包：`BUNDLE_AFTER_RUN=1`（设为 0 关闭）
+
 ---
 
 ## 1. 改动前：项目原始状态（你拿到时能做什么）
